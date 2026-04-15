@@ -1,6 +1,24 @@
 # WaferDb
 
-SQLite schema and bootstrap tooling for tracking wafer inventory, usage history, and darkfield dust-monitoring results.
+SQLite schema, Tomcat backend, and Flutter desktop client for tracking wafer inventory, usage history, and darkfield dust-monitoring results.
+
+## Stack
+
+The repository now contains three layers:
+
+- `db/` and `scripts/`: SQLite schema plus bootstrap tooling.
+- `backend/`: Tomcat web application exposing the database through JSON APIs at `/WaferDb/api`.
+- `waferdb_app/`: Flutter Linux desktop client for operators to browse and update the database.
+
+## Deployment target
+
+The intended server deployment is:
+
+- Tomcat base URL: `http://olserver134.virgo.infn.it:8081/WaferDb`
+- API root: `http://olserver134.virgo.infn.it:8081/WaferDb/api`
+- Default database file: `/data/prod/rd/vac/waferdb.sqlite`
+
+The backend can override the database path with the `WAFERDB_DB_PATH` environment variable.
 
 ## Data model
 
@@ -35,6 +53,84 @@ To recreate the database from scratch:
 
 ```bash
 python3 scripts/init_db.py --replace
+```
+
+To initialize the database directly at the intended server location:
+
+```bash
+python3 scripts/init_db.py --db /data/prod/rd/vac/waferdb.sqlite
+```
+
+## Backend
+
+Build the Tomcat WAR with the offline-friendly build script:
+
+```bash
+bash scripts/build_backend.sh
+```
+
+This produces [backend/target/WaferDb.war](/home/sentenac/WAFERDB/backend/target/WaferDb.war), ready to deploy into Tomcat.
+
+To prepare a Tomcat deployment bundle for `olserver134.virgo.infn.it`:
+
+```bash
+bash scripts/package_backend_release.sh
+```
+
+This assembles:
+
+- `WaferDb.war`
+- a sample Tomcat context descriptor
+- a sample `setenv.sh`
+- a database initialization helper
+- deployment notes in `dist/waferdb_backend_olserver134/DEPLOY.md`
+
+If Maven connectivity is available, the standard build also works:
+
+```bash
+cd backend
+mvn package
+```
+
+### Backend API
+
+- `GET /api/health`
+- `GET /api/lookups`
+- `GET /api/dashboard`
+- `GET /api/wafers?q=&status=&limit=`
+- `GET /api/wafers/{waferId}`
+- `POST /api/wafers`
+- `POST /api/wafers/{waferId}/statuses`
+- `POST /api/wafers/{waferId}/activities`
+
+POST requests currently use `application/x-www-form-urlencoded`.
+
+## Flutter client
+
+The operator-facing desktop client lives in [waferdb_app/lib/main.dart](/home/sentenac/WAFERDB/waferdb_app/lib/main.dart:1).
+
+Run it against the production backend:
+
+```bash
+cd waferdb_app
+flutter run -d linux --dart-define=WAFERDB_API_BASE=http://olserver134.virgo.infn.it:8081/WaferDb/api
+```
+
+What the current client supports:
+
+- query wafers by name or invoice
+- filter wafers by current status
+- inspect full wafer detail, status history, activities, and darkfield runs
+- register a new wafer
+- append status history entries
+- append activity entries
+
+Verification commands used during development:
+
+```bash
+bash scripts/build_backend.sh
+bash scripts/package_backend_release.sh
+cd waferdb_app && flutter analyze && flutter test
 ```
 
 ## Example workflow
@@ -184,3 +280,8 @@ SELECT * FROM wafer_activity_timeline ORDER BY started_at, activity_id;
 
 - [db/schema.sql](/home/sentenac/WAFERDB/db/schema.sql): schema and seed data
 - [scripts/init_db.py](/home/sentenac/WAFERDB/scripts/init_db.py): creates the SQLite database from the schema
+- [scripts/build_backend.sh](/home/sentenac/WAFERDB/scripts/build_backend.sh): builds the Tomcat WAR without needing Maven network access
+- [scripts/package_backend_release.sh](/home/sentenac/WAFERDB/scripts/package_backend_release.sh): assembles the backend deployment bundle for `olserver134`
+- [scripts/init_server_db.sh](/home/sentenac/WAFERDB/scripts/init_server_db.sh): initializes the SQLite database at the server path
+- [backend/](/home/sentenac/WAFERDB/backend): servlet-based backend for Tomcat
+- [waferdb_app/](/home/sentenac/WAFERDB/waferdb_app): Flutter Linux client

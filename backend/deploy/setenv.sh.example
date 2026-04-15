@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Example Tomcat runtime overrides for WaferDb.
+# Source this from your Tomcat setenv.sh or merge the variables into an existing file.
+
+export WAFERDB_DB_PATH="/data/prod/rd/vac/waferdb.sqlite"
+export WAFERDB_ALLOWED_ORIGIN="*"
+
+# Equivalent JVM-property form, if preferred:
+# export CATALINA_OPTS="${CATALINA_OPTS:-} -DWAFERDB_DB_PATH=/data/prod/rd/vac/waferdb.sqlite -DWAFERDB_ALLOWED_ORIGIN=*"

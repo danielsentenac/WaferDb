@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context path="/WaferDb" docBase="WaferDb.war" reloadable="false">
+    <Parameter
+        name="waferDbPath"
+        value="/data/prod/rd/vac/waferdb.sqlite"
+        override="false" />
+    <Parameter
+        name="allowedOrigin"
+        value="*"
+        override="false" />
+</Context>

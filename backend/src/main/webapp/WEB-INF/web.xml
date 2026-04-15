@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+         http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+         version="3.1">
+
+    <display-name>WaferDb</display-name>
+
+    <context-param>
+        <param-name>waferDbPath</param-name>
+        <param-value>/data/prod/rd/vac/waferdb.sqlite</param-value>
+    </context-param>
+
+    <context-param>
+        <param-name>allowedOrigin</param-name>
+        <param-value>*</param-value>
+    </context-param>
+
+    <servlet>
+        <servlet-name>health</servlet-name>
+        <servlet-class>it.infn.virgo.waferdb.api.HealthServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>health</servlet-name>
+        <url-pattern>/api/health</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>lookups</servlet-name>
+        <servlet-class>it.infn.virgo.waferdb.api.LookupServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>lookups</servlet-name>
+        <url-pattern>/api/lookups</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>dashboard</servlet-name>
+        <servlet-class>it.infn.virgo.waferdb.api.DashboardServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>dashboard</servlet-name>
+        <url-pattern>/api/dashboard</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>wafers</servlet-name>
+        <servlet-class>it.infn.virgo.waferdb.api.WafersServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>wafers</servlet-name>
+        <url-pattern>/api/wafers</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>wafers</servlet-name>
+        <url-pattern>/api/wafers/*</url-pattern>
+    </servlet-mapping>
+
+    <welcome-file-list>
+        <welcome-file>index.html</welcome-file>
+    </welcome-file-list>
+</web-app>
