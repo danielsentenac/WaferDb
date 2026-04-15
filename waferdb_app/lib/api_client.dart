@@ -86,6 +86,18 @@ class ApiClient {
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 
+  Future<WaferDetail> addDarkfieldRun(
+    int waferId,
+    Map<String, String> values,
+  ) async {
+    final payload = await _request(
+      'POST',
+      'wafers/$waferId/darkfield-runs',
+      formFields: values,
+    );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {

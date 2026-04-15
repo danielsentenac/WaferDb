@@ -54,6 +54,27 @@ final class RequestUtil {
         }
     }
 
+    static int requiredInteger(HttpServletRequest request, String parameter) {
+        String value = required(request, parameter);
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Invalid integer value for " + parameter + ": " + value);
+        }
+    }
+
+    static Long optionalLong(HttpServletRequest request, String parameter) {
+        String value = optional(request, parameter);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Invalid integer value for " + parameter + ": " + value);
+        }
+    }
+
     static long requiredLongPathSegment(String segment, String description) {
         try {
             return Long.parseLong(segment);

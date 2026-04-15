@@ -216,12 +216,51 @@ class ActivityEntry {
   }
 }
 
+class DarkfieldBinSummaryEntry {
+  const DarkfieldBinSummaryEntry({
+    required this.binSummaryId,
+    required this.binOrder,
+    required this.particleCount,
+    this.binLabel,
+    this.minSizeUm,
+    this.maxSizeUm,
+    this.totalAreaUm2,
+    this.particleDensityCm2,
+    this.notes,
+  });
+
+  final int binSummaryId;
+  final int binOrder;
+  final int particleCount;
+  final String? binLabel;
+  final double? minSizeUm;
+  final double? maxSizeUm;
+  final double? totalAreaUm2;
+  final double? particleDensityCm2;
+  final String? notes;
+
+  factory DarkfieldBinSummaryEntry.fromJson(Map<String, dynamic> json) {
+    return DarkfieldBinSummaryEntry(
+      binSummaryId: _asInt(json['binSummaryId']) ?? 0,
+      binOrder: _asInt(json['binOrder']) ?? 0,
+      particleCount: _asInt(json['particleCount']) ?? 0,
+      binLabel: _asString(json['binLabel']),
+      minSizeUm: _asDouble(json['minSizeUm']),
+      maxSizeUm: _asDouble(json['maxSizeUm']),
+      totalAreaUm2: _asDouble(json['totalAreaUm2']),
+      particleDensityCm2: _asDouble(json['particleDensityCm2']),
+      notes: _asString(json['notes']),
+    );
+  }
+}
+
 class DarkfieldRunEntry {
   const DarkfieldRunEntry({
     required this.darkfieldRunId,
     required this.runType,
     required this.measuredAt,
     required this.dataPath,
+    required this.binSummaries,
     this.activityId,
     this.summaryNotes,
     this.createdAt,
@@ -231,6 +270,7 @@ class DarkfieldRunEntry {
   final String runType;
   final String measuredAt;
   final String dataPath;
+  final List<DarkfieldBinSummaryEntry> binSummaries;
   final int? activityId;
   final String? summaryNotes;
   final String? createdAt;
@@ -241,6 +281,9 @@ class DarkfieldRunEntry {
       runType: json['runType'] as String,
       measuredAt: json['measuredAt'] as String,
       dataPath: json['dataPath'] as String,
+      binSummaries: _asMapList(
+        json['binSummaries'],
+      ).map(DarkfieldBinSummaryEntry.fromJson).toList(growable: false),
       activityId: _asInt(json['activityId']),
       summaryNotes: _asString(json['summaryNotes']),
       createdAt: _asString(json['createdAt']),

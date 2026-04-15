@@ -2,7 +2,7 @@
 <Context path="/WaferDb" docBase="WaferDb.war" reloadable="false">
     <Parameter
         name="waferDbPath"
-        value="/data/prod/rd/vac/waferdb.sqlite"
+        value="/srv/waferdb/waferdb.sqlite"
         override="false" />
     <Parameter
         name="allowedOrigin"

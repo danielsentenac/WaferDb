@@ -9,7 +9,7 @@
 
     <context-param>
         <param-name>waferDbPath</param-name>
-        <param-value>/data/prod/rd/vac/waferdb.sqlite</param-value>
+        <param-value>data/waferdb.sqlite</param-value>
     </context-param>
 
     <context-param>

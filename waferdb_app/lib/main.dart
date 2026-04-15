@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'app_config.dart';
 import 'api_client.dart';
 import 'dialogs.dart';
 import 'models.dart';
-
-const _defaultApiBase = String.fromEnvironment(
-  'WAFERDB_API_BASE',
-  defaultValue: 'http://olserver134.virgo.infn.it:8081/WaferDb/api',
-);
 
 void main() {
   runApp(const WaferDbApp());
@@ -66,7 +62,7 @@ class WaferDbApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const WaferHomePage(apiBase: _defaultApiBase),
+      home: const WaferHomePage(apiBase: defaultApiBase),
     );
   }
 }
@@ -308,6 +304,42 @@ class _WaferHomePageState extends State<WaferHomePage> {
         return;
       }
       _showSnack('Activity appended for ${refreshed.wafer.name}.');
+      setState(() {
+        _selectedDetail = refreshed;
+      });
+      await _refreshData(reloadDetail: false);
+    } on ApiException catch (error) {
+      _showSnack(error.message, isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _appendDarkfieldRun() async {
+    final detail = _selectedDetail;
+    if (detail == null) {
+      return;
+    }
+    final values = await showDarkfieldRunDialog(
+      context,
+      detail,
+      darkfieldRoot: defaultDarkfieldRoot,
+    );
+    if (values == null) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final refreshed = await _apiClient.addDarkfieldRun(
+        detail.wafer.waferId,
+        values,
+      );
+      if (!mounted) {
+        return;
+      }
+      _showSnack('Darkfield run appended for ${refreshed.wafer.name}.');
       setState(() {
         _selectedDetail = refreshed;
       });
@@ -593,6 +625,12 @@ class _WaferHomePageState extends State<WaferHomePage> {
                         icon: const Icon(Icons.add_circle_outline),
                         label: const Text('Add activity'),
                       ),
+                      const SizedBox(height: 10),
+                      FilledButton.tonalIcon(
+                        onPressed: _appendDarkfieldRun,
+                        icon: const Icon(Icons.biotech_outlined),
+                        label: const Text('Add darkfield'),
+                      ),
                     ],
                   ),
                 ],
@@ -673,14 +711,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
                     ? const Text('No darkfield runs linked to this wafer yet.')
                     : Column(
                         children: detail.darkfieldRuns
-                            .map(
-                              (run) => _TimelineTile(
-                                title: '${run.runType} run',
-                                subtitle: run.measuredAt,
-                                caption:
-                                    '${run.dataPath}${run.summaryNotes == null ? '' : '  •  ${run.summaryNotes}'}',
-                              ),
-                            )
+                            .map((run) => _DarkfieldRunCard(run: run))
                             .toList(growable: false),
                       ),
               ),
@@ -918,6 +949,106 @@ class _SectionPanel extends StatelessWidget {
   }
 }
 
+class _DarkfieldRunCard extends StatelessWidget {
+  const _DarkfieldRunCard({required this.run});
+
+  final DarkfieldRunEntry run;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${run.runType} run',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (run.activityId != null)
+                _MiniPill(label: 'Activity #${run.activityId}'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(run.measuredAt),
+          const SizedBox(height: 4),
+          Text(
+            run.dataPath,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: const Color(0xFF556869)),
+          ),
+          if ((run.summaryNotes ?? '').isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(run.summaryNotes!),
+          ],
+          if (run.binSummaries.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Bin summaries',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            ...run.binSummaries.map(
+              (bin) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F4EC),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      bin.binLabel ?? 'Bin ${bin.binOrder}',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _MiniPill(label: '${bin.particleCount} particles'),
+                        if (_binSizeRange(bin) != null)
+                          _MiniPill(label: _binSizeRange(bin)!),
+                        if (bin.totalAreaUm2 != null)
+                          _MiniPill(label: '${bin.totalAreaUm2} um2'),
+                        if (bin.particleDensityCm2 != null)
+                          _MiniPill(label: '${bin.particleDensityCm2} cm2'),
+                      ],
+                    ),
+                    if ((bin.notes ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        bin.notes!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _TimelineTile extends StatelessWidget {
   const _TimelineTile({
     required this.title,
@@ -1025,6 +1156,19 @@ class _MiniPill extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _binSizeRange(DarkfieldBinSummaryEntry bin) {
+  if (bin.minSizeUm == null && bin.maxSizeUm == null) {
+    return null;
+  }
+  if (bin.minSizeUm != null && bin.maxSizeUm != null) {
+    return '${bin.minSizeUm}-${bin.maxSizeUm} um';
+  }
+  if (bin.minSizeUm != null) {
+    return '>= ${bin.minSizeUm} um';
+  }
+  return '<= ${bin.maxSizeUm} um';
 }
 
 class _ErrorView extends StatelessWidget {

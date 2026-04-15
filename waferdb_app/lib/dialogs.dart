@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_config.dart';
 import 'models.dart';
 
 Future<Map<String, String>?> showCreateWaferDialog(
@@ -29,6 +30,20 @@ Future<Map<String, String>?> showActivityDialog(
   return showDialog<Map<String, String>>(
     context: context,
     builder: (context) => _ActivityDialog(lookups: lookups),
+  );
+}
+
+Future<Map<String, String>?> showDarkfieldRunDialog(
+  BuildContext context,
+  WaferDetail detail,
+  {required String darkfieldRoot}
+) {
+  return showDialog<Map<String, String>>(
+    context: context,
+    builder: (context) => _DarkfieldRunDialog(
+      detail: detail,
+      darkfieldRoot: darkfieldRoot,
+    ),
   );
 }
 
@@ -142,6 +157,7 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
                   onChanged: (value) =>
                       setState(() => _initialStatusCode = value),
                 ),
+                const SizedBox(height: 12),
                 _DialogTextField(
                   controller: _notesController,
                   label: 'Notes',
@@ -241,6 +257,7 @@ class _StatusDialogState extends State<_StatusDialog> {
                     .toList(growable: false),
                 onChanged: (value) => setState(() => _statusCode = value),
               ),
+              const SizedBox(height: 12),
               _DialogTextField(
                 controller: _effectiveAtController,
                 label: 'Effective at',
@@ -361,6 +378,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                       .toList(growable: false),
                   onChanged: (value) => setState(() => _purposeCode = value),
                 ),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _locationCode,
                   decoration: const InputDecoration(labelText: 'Location'),
@@ -374,6 +392,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                       .toList(growable: false),
                   onChanged: (value) => setState(() => _locationCode = value),
                 ),
+                const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _observedStatusCode,
                   decoration: const InputDecoration(
@@ -394,6 +413,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                   onChanged: (value) =>
                       setState(() => _observedStatusCode = value),
                 ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -483,6 +503,345 @@ class _ActivityDialogState extends State<_ActivityDialog> {
   }
 }
 
+class _DarkfieldRunDialog extends StatefulWidget {
+  const _DarkfieldRunDialog({
+    required this.detail,
+    required this.darkfieldRoot,
+  });
+
+  final WaferDetail detail;
+  final String darkfieldRoot;
+
+  @override
+  State<_DarkfieldRunDialog> createState() => _DarkfieldRunDialogState();
+}
+
+class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _measuredAtController;
+  late final TextEditingController _dataPathController;
+  late final TextEditingController _summaryNotesController;
+  late final List<_DarkfieldBinDraft> _bins;
+  String _runType = 'background';
+  int? _activityId;
+
+  @override
+  void initState() {
+    super.initState();
+    _measuredAtController = TextEditingController(text: _nowTimestamp());
+    final normalizedRoot = widget.darkfieldRoot.endsWith('/')
+        ? widget.darkfieldRoot.substring(0, widget.darkfieldRoot.length - 1)
+        : widget.darkfieldRoot;
+    _dataPathController = TextEditingController(
+      text: '$normalizedRoot/${widget.detail.wafer.name}/${_todayDate()}',
+    );
+    _summaryNotesController = TextEditingController();
+    _bins = [_DarkfieldBinDraft()];
+  }
+
+  @override
+  void dispose() {
+    _measuredAtController.dispose();
+    _dataPathController.dispose();
+    _summaryNotesController.dispose();
+    for (final bin in _bins) {
+      bin.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Add darkfield run for ${widget.detail.wafer.name}'),
+      content: SizedBox(
+        width: 920,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _runType,
+                        decoration: const InputDecoration(
+                          labelText: 'Run type',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'background',
+                            child: Text('background'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'inspection',
+                            child: Text('inspection'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _runType = value);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<int?>(
+                        initialValue: _activityId,
+                        decoration: const InputDecoration(
+                          labelText: 'Linked activity',
+                        ),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Not linked to an activity'),
+                          ),
+                          ...widget.detail.activities.map(
+                            (activity) => DropdownMenuItem<int?>(
+                              value: activity.activityId,
+                              child: Text(_activityLabel(activity)),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _activityId = value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _DialogTextField(
+                  controller: _measuredAtController,
+                  label: 'Measured at',
+                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _dataPathController,
+                  label: 'Data path',
+                  hint: '$defaultDarkfieldRoot/<wafer>/<date>',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _summaryNotesController,
+                  label: 'Summary notes',
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text(
+                      'Bin summaries',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: _addBin,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add bin'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...List.generate(
+                  _bins.length,
+                  (index) => _buildBinEditor(index, _bins[index]),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.biotech),
+          label: const Text('Save run'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBinEditor(int index, _DarkfieldBinDraft bin) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F4EC),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Bin ${index + 1}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const Spacer(),
+              if (_bins.length > 1)
+                IconButton(
+                  onPressed: () => _removeBin(index),
+                  tooltip: 'Remove bin',
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+          Wrap(
+            spacing: 12,
+            runSpacing: 0,
+            children: [
+              SizedBox(
+                width: 180,
+                child: _DialogTextField(
+                  controller: bin.labelController,
+                  label: 'Label',
+                  hint: 'e.g. 0-5 um',
+                ),
+              ),
+              SizedBox(
+                width: 130,
+                child: _DialogTextField(
+                  controller: bin.minSizeController,
+                  label: 'Min size (um)',
+                ),
+              ),
+              SizedBox(
+                width: 130,
+                child: _DialogTextField(
+                  controller: bin.maxSizeController,
+                  label: 'Max size (um)',
+                ),
+              ),
+              SizedBox(
+                width: 150,
+                child: _DialogTextField(
+                  controller: bin.particleCountController,
+                  label: 'Particle count',
+                  validator: _requiredField,
+                ),
+              ),
+              SizedBox(
+                width: 150,
+                child: _DialogTextField(
+                  controller: bin.totalAreaController,
+                  label: 'Total area (um2)',
+                ),
+              ),
+              SizedBox(
+                width: 170,
+                child: _DialogTextField(
+                  controller: bin.particleDensityController,
+                  label: 'Density (cm2)',
+                ),
+              ),
+            ],
+          ),
+          _DialogTextField(
+            controller: bin.notesController,
+            label: 'Bin notes',
+            maxLines: 2,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addBin() {
+    setState(() {
+      _bins.add(_DarkfieldBinDraft());
+    });
+  }
+
+  void _removeBin(int index) {
+    setState(() {
+      final removed = _bins.removeAt(index);
+      removed.dispose();
+    });
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final values = <String, String>{
+      'runType': _runType,
+      'measuredAt': _measuredAtController.text.trim(),
+      'dataPath': _dataPathController.text.trim(),
+      'binCount': _bins.length.toString(),
+    };
+    if (_activityId != null) {
+      values['activityId'] = _activityId.toString();
+    }
+    _putIfNotBlank(values, 'summaryNotes', _summaryNotesController.text);
+
+    for (var index = 0; index < _bins.length; index++) {
+      final bin = _bins[index];
+      final prefix = 'bin${index}_';
+      values['${prefix}particleCount'] =
+          bin.particleCountController.text.trim().isEmpty
+          ? '0'
+          : bin.particleCountController.text.trim();
+      _putIfNotBlank(values, '${prefix}label', bin.labelController.text);
+      _putIfNotBlank(values, '${prefix}minSizeUm', bin.minSizeController.text);
+      _putIfNotBlank(values, '${prefix}maxSizeUm', bin.maxSizeController.text);
+      _putIfNotBlank(
+        values,
+        '${prefix}totalAreaUm2',
+        bin.totalAreaController.text,
+      );
+      _putIfNotBlank(
+        values,
+        '${prefix}particleDensityCm2',
+        bin.particleDensityController.text,
+      );
+      _putIfNotBlank(values, '${prefix}notes', bin.notesController.text);
+    }
+
+    Navigator.of(context).pop(values);
+  }
+}
+
+class _DarkfieldBinDraft {
+  _DarkfieldBinDraft()
+    : labelController = TextEditingController(),
+      minSizeController = TextEditingController(),
+      maxSizeController = TextEditingController(),
+      particleCountController = TextEditingController(text: '0'),
+      totalAreaController = TextEditingController(),
+      particleDensityController = TextEditingController(),
+      notesController = TextEditingController();
+
+  final TextEditingController labelController;
+  final TextEditingController minSizeController;
+  final TextEditingController maxSizeController;
+  final TextEditingController particleCountController;
+  final TextEditingController totalAreaController;
+  final TextEditingController particleDensityController;
+  final TextEditingController notesController;
+
+  void dispose() {
+    labelController.dispose();
+    minSizeController.dispose();
+    maxSizeController.dispose();
+    particleCountController.dispose();
+    totalAreaController.dispose();
+    particleDensityController.dispose();
+    notesController.dispose();
+  }
+}
+
 class _DialogTextField extends StatelessWidget {
   const _DialogTextField({
     required this.controller,
@@ -517,6 +876,22 @@ String? _requiredField(String? value) {
     return 'Required';
   }
   return null;
+}
+
+void _putIfNotBlank(Map<String, String> target, String key, String value) {
+  final trimmed = value.trim();
+  if (trimmed.isNotEmpty) {
+    target[key] = trimmed;
+  }
+}
+
+String _activityLabel(ActivityEntry activity) {
+  final timestamp =
+      activity.endedAt ?? activity.startedAt ?? activity.createdAt;
+  if (timestamp == null || timestamp.isEmpty) {
+    return '#${activity.activityId} ${activity.purposeLabel} • ${activity.locationCode}';
+  }
+  return '#${activity.activityId} ${activity.purposeLabel} • ${activity.locationCode} • $timestamp';
 }
 
 String _todayDate() {

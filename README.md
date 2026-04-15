@@ -10,15 +10,22 @@ The repository now contains three layers:
 - `backend/`: Tomcat web application exposing the database through JSON APIs at `/WaferDb/api`.
 - `waferdb_app/`: Flutter Linux desktop client for operators to browse and update the database.
 
-## Deployment target
+## Site configuration
 
-The intended server deployment is:
+Tracked files intentionally use sanitized defaults. Keep deployment-specific values in the gitignored `config/site.env.local` file instead.
 
-- Tomcat base URL: `http://olserver134.virgo.infn.it:8081/WaferDb`
-- API root: `http://olserver134.virgo.infn.it:8081/WaferDb/api`
-- Default database file: `/data/prod/rd/vac/waferdb.sqlite`
+Create or refresh that file with:
 
-The backend can override the database path with the `WAFERDB_DB_PATH` environment variable.
+```bash
+bash scripts/restore_local_site_env.sh \
+  --host waferdb.example.org \
+  --port 8081 \
+  --db-path /srv/waferdb/waferdb.sqlite \
+  --darkfield-root /srv/waferdb/darkfield \
+  --dist-label site
+```
+
+The backend also accepts runtime overrides through `WAFERDB_DB_PATH`, `WAFERDB_ALLOWED_ORIGIN`, and the Tomcat `waferDbPath` context parameter.
 
 ## Data model
 
@@ -28,7 +35,7 @@ The schema is normalized around a few core entities:
 - `wafer_status_history`: status changes over time, using controlled values such as `new_out_of_box`, `darkfield_background_todo`, and `darkfield_background_done`.
 - `wafer_activities`: exposure or usage events with purpose (`operation` or `r_and_d`), location, exposure duration, optional start/end timestamps, an optional observed status snapshot, and free-form observations.
 - `locations`: controlled location catalog for towers and clean-room areas, with parent/child hierarchy for CB sub-areas.
-- `darkfield_runs`: one row per microscopy run, including the run date and the expected storage path on `olserver135`.
+- `darkfield_runs`: one row per microscopy run, including the run date and the expected storage path for darkfield output files.
 - `darkfield_bin_summaries`: per-bin dust summary measurements attached to each darkfield run.
 
 ## Included locations
@@ -55,10 +62,10 @@ To recreate the database from scratch:
 python3 scripts/init_db.py --replace
 ```
 
-To initialize the database directly at the intended server location:
+To initialize the database at the configured site path:
 
 ```bash
-python3 scripts/init_db.py --db /data/prod/rd/vac/waferdb.sqlite
+bash scripts/init_server_db.sh
 ```
 
 ## Backend
@@ -71,7 +78,7 @@ bash scripts/build_backend.sh
 
 This produces [backend/target/WaferDb.war](/home/sentenac/WAFERDB/backend/target/WaferDb.war), ready to deploy into Tomcat.
 
-To prepare a Tomcat deployment bundle for `olserver134.virgo.infn.it`:
+To prepare a site-specific Tomcat deployment bundle:
 
 ```bash
 bash scripts/package_backend_release.sh
@@ -80,10 +87,10 @@ bash scripts/package_backend_release.sh
 This assembles:
 
 - `WaferDb.war`
-- a sample Tomcat context descriptor
-- a sample `setenv.sh`
+- a generated Tomcat context descriptor
+- a generated `setenv.sh`
 - a database initialization helper
-- deployment notes in `dist/waferdb_backend_olserver134/DEPLOY.md`
+- deployment notes in `dist/waferdb_backend_<label>/DEPLOY.md`
 
 If Maven connectivity is available, the standard build also works:
 
@@ -102,6 +109,7 @@ mvn package
 - `POST /api/wafers`
 - `POST /api/wafers/{waferId}/statuses`
 - `POST /api/wafers/{waferId}/activities`
+- `POST /api/wafers/{waferId}/darkfield-runs`
 
 POST requests currently use `application/x-www-form-urlencoded`.
 
@@ -109,11 +117,10 @@ POST requests currently use `application/x-www-form-urlencoded`.
 
 The operator-facing desktop client lives in [waferdb_app/lib/main.dart](/home/sentenac/WAFERDB/waferdb_app/lib/main.dart:1).
 
-Run it against the production backend:
+Run it against the backend configured in `config/site.env.local`:
 
 ```bash
-cd waferdb_app
-flutter run -d linux --dart-define=WAFERDB_API_BASE=http://olserver134.virgo.infn.it:8081/WaferDb/api
+bash scripts/flutter_local.sh run -d linux
 ```
 
 What the current client supports:
@@ -124,13 +131,15 @@ What the current client supports:
 - register a new wafer
 - append status history entries
 - append activity entries
+- append darkfield runs with per-bin summaries
 
 Verification commands used during development:
 
 ```bash
 bash scripts/build_backend.sh
 bash scripts/package_backend_release.sh
-cd waferdb_app && flutter analyze && flutter test
+bash scripts/flutter_local.sh analyze
+bash scripts/flutter_local.sh test
 ```
 
 ## Example workflow
@@ -231,7 +240,7 @@ SELECT
     'inspection',
     '2026-04-21 11:15:00',
     'Visible contamination increase after NI exposure.',
-    '/data/prod/rd/vac/darkfield/WAFER-001/2026-04-21'
+    '/srv/waferdb/darkfield/WAFER-001/2026-04-21'
 FROM wafers w
 JOIN wafer_activities a ON a.wafer_id = w.wafer_id
 WHERE w.name = 'WAFER-001'
@@ -280,8 +289,11 @@ SELECT * FROM wafer_activity_timeline ORDER BY started_at, activity_id;
 
 - [db/schema.sql](/home/sentenac/WAFERDB/db/schema.sql): schema and seed data
 - [scripts/init_db.py](/home/sentenac/WAFERDB/scripts/init_db.py): creates the SQLite database from the schema
+- [config/site.env.example](/home/sentenac/WAFERDB/config/site.env.example): sanitized site-configuration template
 - [scripts/build_backend.sh](/home/sentenac/WAFERDB/scripts/build_backend.sh): builds the Tomcat WAR without needing Maven network access
-- [scripts/package_backend_release.sh](/home/sentenac/WAFERDB/scripts/package_backend_release.sh): assembles the backend deployment bundle for `olserver134`
-- [scripts/init_server_db.sh](/home/sentenac/WAFERDB/scripts/init_server_db.sh): initializes the SQLite database at the server path
+- [scripts/package_backend_release.sh](/home/sentenac/WAFERDB/scripts/package_backend_release.sh): assembles a site-specific backend deployment bundle
+- [scripts/init_server_db.sh](/home/sentenac/WAFERDB/scripts/init_server_db.sh): initializes the SQLite database at the configured site path
+- [scripts/restore_local_site_env.sh](/home/sentenac/WAFERDB/scripts/restore_local_site_env.sh): restores a gitignored local config with real deployment values
+- [scripts/flutter_local.sh](/home/sentenac/WAFERDB/scripts/flutter_local.sh): runs Flutter commands with the local site config
 - [backend/](/home/sentenac/WAFERDB/backend): servlet-based backend for Tomcat
 - [waferdb_app/](/home/sentenac/WAFERDB/waferdb_app): Flutter Linux client

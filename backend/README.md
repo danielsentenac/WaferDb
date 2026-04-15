@@ -2,11 +2,9 @@
 
 Tomcat web application exposing the SQLite WaferDb through JSON APIs.
 
-## Intended deployment
+## Configuration
 
-- Tomcat context path: `http://olserver134.virgo.infn.it:8081/WaferDb`
-- API root: `http://olserver134.virgo.infn.it:8081/WaferDb/api`
-- Default database path: `/data/prod/rd/vac/waferdb.sqlite`
+Tracked backend files are sanitized. Keep deployment-specific values in the gitignored `config/site.env.local` file and regenerate it with `bash scripts/restore_local_site_env.sh ...` when needed.
 
 The runtime database path can be overridden with:
 
@@ -30,6 +28,7 @@ The allowed CORS origin can also be overridden with:
 - `POST /api/wafers`
 - `POST /api/wafers/{waferId}/statuses`
 - `POST /api/wafers/{waferId}/activities`
+- `POST /api/wafers/{waferId}/darkfield-runs`
 
 POST requests use `application/x-www-form-urlencoded` parameters so the Flutter client can submit forms without adding a JSON parser dependency to the backend.
 
@@ -44,7 +43,7 @@ This produces `target/WaferDb.war`, ready to deploy into Tomcat.
 
 ## Deployment bundle
 
-Build the deployable bundle for `olserver134.virgo.infn.it`:
+Build the deployable bundle using the current local site config:
 
 ```bash
 bash scripts/package_backend_release.sh
@@ -53,7 +52,7 @@ bash scripts/package_backend_release.sh
 This assembles:
 
 - `backend/target/WaferDb.war`
-- `backend/deploy/WaferDb.xml`
+- `backend/deploy/WaferDb.xml.example`
 - `backend/deploy/setenv.sh.example`
 - `scripts/init_server_db.sh`
-- `dist/waferdb_backend_olserver134/DEPLOY.md`
+- `dist/waferdb_backend_<label>/DEPLOY.md`

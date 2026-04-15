@@ -63,6 +63,12 @@ public final class WafersServlet extends BaseApiServlet {
                 return;
             }
 
+            if (segments.size() == 2 && "darkfield-runs".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                sendCreated(response, createDarkfieldRun(connection, waferId, request));
+                return;
+            }
+
             sendError(response, HttpServletResponse.SC_NOT_FOUND, "Unsupported wafer API path.");
         } catch (IllegalArgumentException exception) {
             sendError(response, HttpServletResponse.SC_BAD_REQUEST, exception.getMessage());
@@ -229,14 +235,45 @@ public final class WafersServlet extends BaseApiServlet {
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<Map<String, Object>> items = new ArrayList<>();
                 while (resultSet.next()) {
+                    long darkfieldRunId = resultSet.getLong("darkfield_run_id");
                     Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("darkfieldRunId", resultSet.getLong("darkfield_run_id"));
+                    item.put("darkfieldRunId", darkfieldRunId);
                     item.put("activityId", resultSet.getObject("activity_id"));
                     item.put("runType", resultSet.getString("run_type"));
                     item.put("measuredAt", resultSet.getString("measured_at"));
                     item.put("summaryNotes", resultSet.getString("summary_notes"));
                     item.put("dataPath", resultSet.getString("data_path"));
                     item.put("createdAt", resultSet.getString("created_at"));
+                    item.put("binSummaries", queryDarkfieldBinSummaries(connection, darkfieldRunId));
+                    items.add(item);
+                }
+                return items;
+            }
+        }
+    }
+
+    private List<Map<String, Object>> queryDarkfieldBinSummaries(Connection connection, long darkfieldRunId)
+        throws SQLException {
+        String sql = ""
+            + "SELECT bin_summary_id, bin_order, bin_label, min_size_um, max_size_um, particle_count, "
+            + "total_area_um2, particle_density_cm2, notes "
+            + "FROM darkfield_bin_summaries WHERE darkfield_run_id = ? "
+            + "ORDER BY bin_order ASC, bin_summary_id ASC";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, darkfieldRunId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<Map<String, Object>> items = new ArrayList<>();
+                while (resultSet.next()) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("binSummaryId", resultSet.getLong("bin_summary_id"));
+                    item.put("binOrder", resultSet.getInt("bin_order"));
+                    item.put("binLabel", resultSet.getString("bin_label"));
+                    item.put("minSizeUm", resultSet.getObject("min_size_um"));
+                    item.put("maxSizeUm", resultSet.getObject("max_size_um"));
+                    item.put("particleCount", resultSet.getInt("particle_count"));
+                    item.put("totalAreaUm2", resultSet.getObject("total_area_um2"));
+                    item.put("particleDensityCm2", resultSet.getObject("particle_density_cm2"));
+                    item.put("notes", resultSet.getString("notes"));
                     items.add(item);
                 }
                 return items;
@@ -378,6 +415,103 @@ public final class WafersServlet extends BaseApiServlet {
             payload.put("activityId", activityId);
             payload.put("detail", queryWaferDetail(connection, waferId));
             return payload;
+        }
+    }
+
+    private Map<String, Object> createDarkfieldRun(Connection connection, long waferId, HttpServletRequest request)
+        throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+
+        try {
+            Long activityId = RequestUtil.optionalLong(request, "activityId");
+            if (activityId != null && !activityBelongsToWafer(connection, waferId, activityId.longValue())) {
+                throw new IllegalArgumentException(
+                    "Activity " + activityId + " does not belong to wafer " + waferId + '.'
+                );
+            }
+
+            long darkfieldRunId;
+            String sql = ""
+                + "INSERT INTO darkfield_runs ("
+                + "wafer_id, activity_id, run_type, measured_at, summary_notes, data_path"
+                + ") VALUES (?, ?, ?, ?, ?, ?)";
+            try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                statement.setLong(1, waferId);
+                statement.setObject(2, activityId);
+                statement.setString(3, RequestUtil.required(request, "runType"));
+                statement.setString(4, RequestUtil.required(request, "measuredAt"));
+                statement.setString(5, RequestUtil.optional(request, "summaryNotes"));
+                statement.setString(6, RequestUtil.required(request, "dataPath"));
+                statement.executeUpdate();
+
+                try (ResultSet keys = statement.getGeneratedKeys()) {
+                    if (!keys.next()) {
+                        throw new SQLException("Darkfield run insert did not return a key.");
+                    }
+                    darkfieldRunId = keys.getLong(1);
+                }
+            }
+
+            int binCount = RequestUtil.optionalInteger(request, "binCount", 0, 200);
+            for (int index = 0; index < binCount; index++) {
+                insertDarkfieldBinSummary(connection, darkfieldRunId, index + 1, request, "bin" + index + "_");
+            }
+
+            connection.commit();
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ok", true);
+            payload.put("waferId", waferId);
+            payload.put("darkfieldRunId", darkfieldRunId);
+            payload.put("detail", queryWaferDetail(connection, waferId));
+            return payload;
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } catch (RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(originalAutoCommit);
+        }
+    }
+
+    private boolean activityBelongsToWafer(Connection connection, long waferId, long activityId) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM wafer_activities WHERE wafer_id = ? AND activity_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, waferId);
+            statement.setLong(2, activityId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getLong(1) == 1;
+            }
+        }
+    }
+
+    private void insertDarkfieldBinSummary(
+        Connection connection,
+        long darkfieldRunId,
+        int binOrder,
+        HttpServletRequest request,
+        String prefix
+    ) throws SQLException {
+        String sql = ""
+            + "INSERT INTO darkfield_bin_summaries ("
+            + "darkfield_run_id, bin_order, bin_label, min_size_um, max_size_um, particle_count, "
+            + "total_area_um2, particle_density_cm2, notes"
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, darkfieldRunId);
+            statement.setInt(2, binOrder);
+            statement.setString(3, RequestUtil.optional(request, prefix + "label"));
+            bindNullableDouble(statement, 4, RequestUtil.optionalDouble(request, prefix + "minSizeUm"));
+            bindNullableDouble(statement, 5, RequestUtil.optionalDouble(request, prefix + "maxSizeUm"));
+            statement.setInt(6, RequestUtil.requiredInteger(request, prefix + "particleCount"));
+            bindNullableDouble(statement, 7, RequestUtil.optionalDouble(request, prefix + "totalAreaUm2"));
+            bindNullableDouble(statement, 8, RequestUtil.optionalDouble(request, prefix + "particleDensityCm2"));
+            statement.setString(9, RequestUtil.optional(request, prefix + "notes"));
+            statement.executeUpdate();
         }
     }
 

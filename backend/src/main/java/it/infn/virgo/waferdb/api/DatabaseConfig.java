@@ -9,7 +9,7 @@ import java.sql.SQLException;
 
 final class DatabaseConfig {
     private static final String CONTEXT_KEY = DatabaseConfig.class.getName();
-    private static final String DEFAULT_DB_PATH = "/data/prod/rd/vac/waferdb.sqlite";
+    private static final String DEFAULT_DB_PATH = "data/waferdb.sqlite";
     private static final String DEFAULT_ALLOWED_ORIGIN = "*";
 
     private final Path databasePath;
