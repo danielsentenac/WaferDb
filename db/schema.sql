@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS wafers (
     reference_invoice TEXT,
     roughness_nm REAL CHECK (roughness_nm IS NULL OR roughness_nm >= 0),
     wafer_type TEXT NOT NULL,
-    wafer_size_mm REAL CHECK (wafer_size_mm IS NULL OR wafer_size_mm > 0),
+    wafer_size_in REAL CHECK (wafer_size_in IS NULL OR wafer_size_in > 0),
     wafer_size_label TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

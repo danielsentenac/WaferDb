@@ -6,7 +6,7 @@ SQLite schema and bootstrap tooling for tracking wafer inventory, usage history,
 
 The schema is normalized around a few core entities:
 
-- `wafers`: master data for each wafer (`name`, acquisition date, invoice reference, roughness, type, size).
+- `wafers`: master data for each wafer (`name`, acquisition date, invoice reference, roughness, type, size in inches).
 - `wafer_status_history`: status changes over time, using controlled values such as `new_out_of_box`, `darkfield_background_todo`, and `darkfield_background_done`.
 - `wafer_activities`: exposure or usage events with purpose (`operation` or `r_and_d`), location, exposure duration, optional start/end timestamps, an optional observed status snapshot, and free-form observations.
 - `locations`: controlled location catalog for towers and clean-room areas, with parent/child hierarchy for CB sub-areas.
@@ -48,14 +48,14 @@ INSERT INTO wafers (
     reference_invoice,
     roughness_nm,
     wafer_type,
-    wafer_size_mm
+    wafer_size_in
 ) VALUES (
     'WAFER-001',
     '2026-04-15',
     'INV-12345',
     0.35,
     'silicon',
-    100.0
+    4.0
 );
 ```
 
