@@ -39,6 +39,7 @@ class ApiClient {
   Future<List<WaferSummary>> fetchWafers({
     String query = '',
     String? statusCode,
+    String? locationCode,
     int limit = 80,
   }) async {
     final payload = await _request(
@@ -47,6 +48,7 @@ class ApiClient {
       queryParameters: <String, String?>{
         'q': query.isEmpty ? null : query,
         'status': statusCode,
+        'location': locationCode,
         'limit': '$limit',
       },
     );

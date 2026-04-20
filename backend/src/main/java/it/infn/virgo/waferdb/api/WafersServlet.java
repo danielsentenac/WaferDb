@@ -194,6 +194,7 @@ public final class WafersServlet extends BaseApiServlet {
     private Map<String, Object> queryWaferList(Connection connection, HttpServletRequest request) throws SQLException {
         String query = RequestUtil.optional(request, "q");
         String statusCode = RequestUtil.optional(request, "status");
+        String locationCode = RequestUtil.optional(request, "location");
         int limit = RequestUtil.optionalInteger(request, "limit", 50, 500);
 
         StringBuilder sql = new StringBuilder()
@@ -215,6 +216,10 @@ public final class WafersServlet extends BaseApiServlet {
             clauses.add("cs.status_code = ?");
             parameters.add(statusCode);
         }
+        if (locationCode != null) {
+            clauses.add("w.wafer_id IN (SELECT DISTINCT a.wafer_id FROM wafer_activities a JOIN locations l ON l.location_id = a.location_id WHERE l.code = ?)");
+            parameters.add(locationCode);
+        }
         if (!clauses.isEmpty()) {
             sql.append("WHERE ").append(String.join(" AND ", clauses)).append(' ');
         }
@@ -233,6 +238,7 @@ public final class WafersServlet extends BaseApiServlet {
                 payload.put("items", wafers);
                 payload.put("query", query);
                 payload.put("statusFilter", statusCode);
+                payload.put("locationFilter", locationCode);
                 payload.put("limit", limit);
                 return payload;
             }

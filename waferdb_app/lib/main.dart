@@ -91,6 +91,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
   WaferDetail? _selectedDetail;
   int? _selectedWaferId;
   String? _statusFilter;
+  String? _locationFilter;
   bool _loading = true;
   bool _busy = false;
   String? _errorMessage;
@@ -165,6 +166,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
       final wafers = await _apiClient.fetchWafers(
         query: _searchController.text.trim(),
         statusCode: _statusFilter,
+        locationCode: _locationFilter,
       );
       WaferDetail? detail = _selectedDetail;
       int? selectedWaferId = _selectedWaferId;
@@ -769,6 +771,31 @@ class _WaferHomePageState extends State<WaferHomePage> {
               ],
               onChanged: (value) {
                 setState(() => _statusFilter = value);
+                _refreshData();
+              },
+            ),
+            const SizedBox(height: 18),
+            DropdownButtonFormField<String>(
+              initialValue: _locationFilter,
+              decoration: const InputDecoration(
+                labelText: 'Location filter',
+                filled: true,
+                fillColor: inventoryFieldFill,
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('All locations'),
+                ),
+                ...?_lookups?.locations.map(
+                  (loc) => DropdownMenuItem<String>(
+                    value: loc.code,
+                    child: Text(loc.displayLabel),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                setState(() => _locationFilter = value);
                 _refreshData();
               },
             ),
