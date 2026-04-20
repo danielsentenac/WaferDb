@@ -33,11 +33,13 @@ Future<Map<String, String>?> showStatusDialog(
 
 Future<Map<String, String>?> showWaferHistoryDialog(
   BuildContext context,
-  WaferDetail detail,
-) {
+  WaferDetail detail, {
+  WaferMetadataHistoryEntry? initialEntry,
+}) {
   return showDialog<Map<String, String>>(
     context: context,
-    builder: (context) => _WaferHistoryDialog(detail: detail),
+    builder: (context) =>
+        _WaferHistoryDialog(detail: detail, initialEntry: initialEntry),
   );
 }
 
@@ -428,7 +430,7 @@ class _StatusDialogState extends State<_StatusDialog> {
                 _DialogTextField(
                   controller: _effectiveAtController,
                   label: 'Effective at',
-                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  hint: 'YYYY-MM-DD HH:MM',
                   validator: _requiredField,
                 ),
                 _DialogTextField(
@@ -473,9 +475,10 @@ class _StatusDialogState extends State<_StatusDialog> {
 }
 
 class _WaferHistoryDialog extends StatefulWidget {
-  const _WaferHistoryDialog({required this.detail});
+  const _WaferHistoryDialog({required this.detail, this.initialEntry});
 
   final WaferDetail detail;
+  final WaferMetadataHistoryEntry? initialEntry;
 
   @override
   State<_WaferHistoryDialog> createState() => _WaferHistoryDialogState();
@@ -499,22 +502,33 @@ class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
   @override
   void initState() {
     super.initState();
+    final entry = widget.initialEntry;
     final wafer = widget.detail.wafer;
-    _changedAtController = TextEditingController(text: _nowTimestamp());
-    _nameController = TextEditingController(text: wafer.name);
-    _acquiredDateController = TextEditingController(text: wafer.acquiredDate);
+    _changedAtController = TextEditingController(
+      text: entry?.changedAt ?? _nowTimestamp(),
+    );
+    _nameController = TextEditingController(text: entry?.name ?? wafer.name);
+    _acquiredDateController = TextEditingController(
+      text: entry?.acquiredDate ?? wafer.acquiredDate,
+    );
     _invoiceController = TextEditingController(
-      text: wafer.referenceInvoice ?? '',
+      text: entry?.referenceInvoice ?? wafer.referenceInvoice ?? '',
     );
     _roughnessController = TextEditingController(
-      text: _nullableNumber(wafer.roughnessNm),
+      text: _nullableNumber(entry?.roughnessNm ?? wafer.roughnessNm),
     );
-    _typeController = TextEditingController(text: wafer.waferType);
+    _typeController = TextEditingController(
+      text: entry?.waferType ?? wafer.waferType,
+    );
     _sizeInController = TextEditingController(
-      text: _nullableNumber(wafer.waferSizeIn),
+      text: _nullableNumber(entry?.waferSizeIn ?? wafer.waferSizeIn),
     );
-    _notesController = TextEditingController(text: wafer.notes ?? '');
-    _changeSummaryController = TextEditingController();
+    _notesController = TextEditingController(
+      text: entry?.notes ?? wafer.notes ?? '',
+    );
+    _changeSummaryController = TextEditingController(
+      text: entry?.changeSummary ?? '',
+    );
   }
 
   @override
@@ -534,7 +548,11 @@ class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Add history for ${widget.detail.wafer.name}'),
+      title: Text(
+        widget.initialEntry != null
+            ? 'Edit history entry for ${widget.detail.wafer.name}'
+            : 'Add history for ${widget.detail.wafer.name}',
+      ),
       content: SizedBox(
         width: 560,
         child: Form(
@@ -546,7 +564,7 @@ class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
                 _DialogTextField(
                   controller: _changedAtController,
                   label: 'Changed at',
-                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  hint: 'YYYY-MM-DD HH:MM',
                   validator: _requiredField,
                 ),
                 _DialogTextField(
@@ -668,8 +686,12 @@ class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
         ),
         FilledButton.icon(
           onPressed: _acquiringPhoto ? null : _submit,
-          icon: const Icon(Icons.history_toggle_off),
-          label: const Text('Add history'),
+          icon: Icon(
+            widget.initialEntry != null
+                ? Icons.save_outlined
+                : Icons.history_toggle_off,
+          ),
+          label: Text(widget.initialEntry != null ? 'Save changes' : 'Add history'),
         ),
       ],
     );
@@ -896,12 +918,12 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                 _DialogTextField(
                   controller: _startedAtController,
                   label: 'Started at',
-                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  hint: 'YYYY-MM-DD HH:MM',
                 ),
                 _DialogTextField(
                   controller: _endedAtController,
                   label: 'Ended at',
-                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  hint: 'YYYY-MM-DD HH:MM',
                 ),
                 _DialogTextField(
                   controller: _observationsController,
@@ -1199,7 +1221,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                 _DialogTextField(
                   controller: _measuredAtController,
                   label: 'Measured at',
-                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  hint: 'YYYY-MM-DD HH:MM',
                   validator: _requiredField,
                 ),
                 _DialogTextField(
@@ -1665,8 +1687,7 @@ String _nowTimestamp() {
   final now = DateTime.now();
   return '${_todayDate()} '
       '${now.hour.toString().padLeft(2, '0')}:'
-      '${now.minute.toString().padLeft(2, '0')}:'
-      '${now.second.toString().padLeft(2, '0')}';
+      '${now.minute.toString().padLeft(2, '0')}';
 }
 
 String _nullableNumber(double? value) {

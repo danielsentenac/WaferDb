@@ -199,6 +199,13 @@ public final class WafersServlet extends BaseApiServlet {
                 return;
             }
 
+            if (segments.size() == 3 && "history".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long historyId = RequestUtil.requiredLongPathSegment(segments.get(2), "history id");
+                sendOk(response, updateMetadataHistory(connection, waferId, historyId, request));
+                return;
+            }
+
             sendError(response, HttpServletResponse.SC_NOT_FOUND, "Unsupported wafer API path.");
         } catch (IllegalArgumentException exception) {
             sendError(response, HttpServletResponse.SC_BAD_REQUEST, exception.getMessage());
@@ -208,6 +215,37 @@ public final class WafersServlet extends BaseApiServlet {
                 : HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
             sendError(response, status, exception.getMessage());
         }
+    }
+
+    private Map<String, Object> updateMetadataHistory(
+        Connection connection, long waferId, long historyId, HttpServletRequest request
+    ) throws SQLException {
+        String sql = ""
+            + "UPDATE wafer_metadata_history SET "
+            + "changed_at = ?, name = ?, acquired_date = ?, reference_invoice = ?, "
+            + "roughness_nm = ?, wafer_type = ?, wafer_size_in = ?, notes = ?, change_summary = ? "
+            + "WHERE wafer_id = ? AND wafer_metadata_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, RequestUtil.required(request, "changedAt"));
+            statement.setString(2, RequestUtil.required(request, "name"));
+            statement.setString(3, RequestUtil.required(request, "acquiredDate"));
+            statement.setString(4, RequestUtil.optional(request, "referenceInvoice"));
+            bindNullableDouble(statement, 5, RequestUtil.optionalDouble(request, "roughnessNm"));
+            statement.setString(6, RequestUtil.required(request, "waferType"));
+            bindNullableDouble(statement, 7, RequestUtil.optionalDouble(request, "waferSizeIn"));
+            statement.setString(8, RequestUtil.optional(request, "notes"));
+            statement.setString(9, RequestUtil.optional(request, "changeSummary"));
+            statement.setLong(10, waferId);
+            statement.setLong(11, historyId);
+            int updated = statement.executeUpdate();
+            if (updated == 0) {
+                throw new IllegalArgumentException("Metadata history record not found.");
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
     }
 
     private Map<String, Object> updateStatusHistory(

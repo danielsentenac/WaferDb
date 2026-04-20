@@ -14,6 +14,13 @@ void main() {
   runApp(const WaferDbApp());
 }
 
+// Strip seconds from stored "YYYY-MM-DD HH:MM:SS" timestamps for display.
+String _ts(String? s) {
+  if (s == null) return '';
+  final m = RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}').firstMatch(s);
+  return m != null ? m.group(0)! : s;
+}
+
 class WaferDbApp extends StatelessWidget {
   const WaferDbApp({super.key});
 
@@ -411,6 +418,38 @@ class _WaferHomePageState extends State<WaferHomePage> {
     }
   }
 
+  Future<void> _editMetadataHistory(
+    int waferId,
+    WaferMetadataHistoryEntry entry,
+  ) async {
+    final detail = _selectedDetail;
+    if (detail == null) return;
+    final values = await showWaferHistoryDialog(
+      context,
+      detail,
+      initialEntry: entry,
+    );
+    if (values == null) return;
+    setState(() => _busy = true);
+    try {
+      final refreshed = await _apiClient.updateMetadataHistory(
+        waferId,
+        entry.waferMetadataHistoryId,
+        values,
+      );
+      if (!mounted) return;
+      _showSnack('History entry updated.');
+      setState(() {
+        _selectedDetail = refreshed;
+        _busy = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      _showSnack(error.toString());
+      setState(() => _busy = false);
+    }
+  }
+
   Future<void> _deleteMetadataHistory(
     int waferId,
     int historyId,
@@ -423,7 +462,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
   }
 
   Future<void> _deleteStatus(int waferId, StatusHistoryEntry entry) async {
-    if (!await _confirmDelete('${entry.statusLabel} (${entry.effectiveAt})'))
+    if (!await _confirmDelete('${entry.statusLabel} (${_ts(entry.effectiveAt)})'))
       return;
     await _runDelete(
       () => _apiClient.deleteStatus(waferId, entry.waferStatusHistoryId),
@@ -439,7 +478,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
   }
 
   Future<void> _deleteDarkfieldRun(int waferId, DarkfieldRunEntry run) async {
-    if (!await _confirmDelete('${run.runType} run (${run.measuredAt})')) return;
+    if (!await _confirmDelete('${run.runType} run (${_ts(run.measuredAt)})')) return;
     await _runDelete(
       () => _apiClient.deleteDarkfieldRun(waferId, run.darkfieldRunId),
     );
@@ -524,7 +563,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
         context: context,
         builder: (context) => _PhotoViewDialog(
           title: 'Box/Identity photo',
-          subtitle: entry.changedAt,
+          subtitle: _ts(entry.changedAt),
           bytes: bytes,
         ),
       );
@@ -541,7 +580,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
   ) async {
     final photo = await showCapturePhotoDialog(
       context,
-      title: 'Box/Identity photo — ${entry.changedAt}',
+      title: 'Box/Identity photo — ${_ts(entry.changedAt)}',
     );
     if (photo == null || !mounted) return;
     setState(() => _busy = true);
@@ -967,10 +1006,14 @@ class _WaferHomePageState extends State<WaferHomePage> {
                                 detail.wafer.waferId,
                                 entry,
                               ),
+                        onEdit: () => _editMetadataHistory(
+                          detail.wafer.waferId,
+                          entry,
+                        ),
                         onDelete: () => _deleteMetadataHistory(
                           detail.wafer.waferId,
                           entry.waferMetadataHistoryId,
-                          entry.changedAt,
+                          _ts(entry.changedAt),
                         ),
                       ),
                     )
@@ -1011,8 +1054,8 @@ class _WaferHomePageState extends State<WaferHomePage> {
                         subtitle:
                             '${e.value.exposureQuantity} ${e.value.exposureUnit}',
                         caption: [
-                          if (e.value.startedAt != null) e.value.startedAt,
-                          if (e.value.endedAt != null) e.value.endedAt,
+                          if (e.value.startedAt != null) _ts(e.value.startedAt),
+                          if (e.value.endedAt != null) _ts(e.value.endedAt),
                           if (e.value.observations != null)
                             e.value.observations,
                         ].whereType<String>().join('  •  '),
@@ -1067,10 +1110,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
                     subtitle:
                         '${entry.exposureQuantity} ${entry.exposureUnit} at ${entry.displayLocationName}',
                     caption:
-                        entry.endedAt ??
-                        entry.startedAt ??
-                        entry.createdAt ??
-                        '',
+                        _ts(entry.endedAt ?? entry.startedAt ?? entry.createdAt),
                   ),
                 )
                 .toList(growable: false),
@@ -1556,7 +1596,7 @@ class _DarkfieldRunCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text(run.measuredAt),
+          Text(_ts(run.measuredAt)),
           const SizedBox(height: 4),
           Text(
             run.dataPath,
@@ -1646,12 +1686,14 @@ class _WaferMetadataHistoryCard extends StatelessWidget {
     required this.entry,
     this.onViewPhoto,
     this.onAttachPhoto,
+    this.onEdit,
     this.onDelete,
   });
 
   final WaferMetadataHistoryEntry entry;
   final VoidCallback? onViewPhoto;
   final VoidCallback? onAttachPhoto;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -1670,7 +1712,7 @@ class _WaferMetadataHistoryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  entry.changedAt,
+                  _ts(entry.changedAt),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -1687,6 +1729,12 @@ class _WaferMetadataHistoryCard extends StatelessWidget {
                   tooltip: 'Attach box/identity photo',
                   icon: const Icon(Icons.add_a_photo_outlined),
                   onPressed: onAttachPhoto,
+                ),
+              if (onEdit != null)
+                IconButton(
+                  tooltip: 'Edit entry',
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: onEdit,
                 ),
               if (onDelete != null)
                 IconButton(
@@ -1962,8 +2010,8 @@ class _StatusHistoryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${entry.effectiveAt}'
-                  '${entry.clearedAt == null ? '' : '  →  ${entry.clearedAt}'}',
+                  '${_ts(entry.effectiveAt)}'
+                  '${entry.clearedAt == null ? '' : '  →  ${_ts(entry.clearedAt)}'}',
                 ),
                 if ((entry.notes ?? '').isNotEmpty) ...[
                   const SizedBox(height: 6),

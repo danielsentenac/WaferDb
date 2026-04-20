@@ -235,6 +235,19 @@ class ApiClient {
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 
+  Future<WaferDetail> updateMetadataHistory(
+    int waferId,
+    int historyId,
+    Map<String, String> values,
+  ) async {
+    final payload = await _request(
+      'PATCH',
+      'wafers/$waferId/history/$historyId',
+      formFields: values,
+    );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
   Future<WaferDetail> deleteMetadataHistory(int waferId, int historyId) async {
     final payload = await _request('DELETE', 'wafers/$waferId/history/$historyId');
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
