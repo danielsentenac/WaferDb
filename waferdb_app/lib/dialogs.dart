@@ -1157,52 +1157,48 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _DialogDropdownField<String>(
-                        initialValue: _runType,
-                        label: 'Run type',
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'background',
-                            child: Text('background'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'inspection',
-                            child: Text('inspection'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _runType = value);
-                          }
-                        },
+                _DialogDropdownField<String>(
+                  initialValue: _runType,
+                  label: 'Run type',
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'background',
+                      child: Text('background'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'inspection',
+                      child: Text('inspection'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _runType = value);
+                    }
+                  },
+                ),
+                _DialogDropdownField<int?>(
+                  initialValue: _activityId,
+                  label: 'Linked activity',
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text(
+                        'Not linked to an activity',
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: _DialogDropdownField<int?>(
-                        initialValue: _activityId,
-                        label: 'Linked activity',
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('Not linked to an activity'),
-                          ),
-                          ...widget.detail.activities.map(
-                            (activity) => DropdownMenuItem<int?>(
-                              value: activity.activityId,
-                              child: Text(_activityLabel(activity)),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _activityId = value),
+                    ...widget.detail.activities.map(
+                      (activity) => DropdownMenuItem<int?>(
+                        value: activity.activityId,
+                        child: Text(
+                          _activityLabel(activity),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
+                  onChanged: (value) =>
+                      setState(() => _activityId = value),
                 ),
                 const SizedBox(height: 12),
                 _DialogTextField(
@@ -1383,9 +1379,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
           _runType = imported.inferredRunType!;
         }
         if (_summaryNotesController.text.trim().isEmpty) {
-          _summaryNotesController.text = imported.buildSummaryNotes(
-            defaultDarkfieldImportHost,
-          );
+          _summaryNotesController.text = imported.buildSummaryNotes();
         }
       });
       _showDialogMessage(

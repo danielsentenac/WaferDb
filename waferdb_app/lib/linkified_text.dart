@@ -95,7 +95,7 @@ class _LinkifiedTextState extends State<LinkifiedText> {
             ..onTap = () => _openUrl(segment.url!);
           _recognizers.add(recognizer);
           return TextSpan(
-            text: segment.text,
+            text: _breakableUrl(segment.text),
             style: linkStyle,
             recognizer: recognizer,
             mouseCursor: SystemMouseCursors.click,
@@ -142,6 +142,9 @@ class _NormalizedUrl {
   final String url;
   final String trailingText;
 }
+
+String _breakableUrl(String url) =>
+    url.replaceAllMapped(RegExp(r'([/?=&])'), (m) => '${m[1]}\u200B');
 
 void _appendPlainText(List<LinkifiedSegment> segments, String text) {
   if (text.isEmpty) return;

@@ -40,8 +40,8 @@ class DarkfieldImportedSummary {
   final int? frameCount;
   final String? inferredRunType;
 
-  String buildSummaryNotes(String host) {
-    final lines = <String>['Imported from $host:$summaryFilePath'];
+  String buildSummaryNotes() {
+    final lines = <String>[];
     if (totalScannedAreaUm2 != null) {
       final cm2 = totalScannedAreaUm2! / 1e8;
       lines.add('Total scanned area: ${cm2.toStringAsFixed(2)} cm2');
