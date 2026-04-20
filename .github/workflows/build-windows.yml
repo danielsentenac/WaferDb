@@ -21,11 +21,7 @@ jobs:
 
       - name: Generate Windows platform scaffold
         working-directory: waferdb_app
-        run: |
-          Copy-Item windows\runner\resources\app_icon.ico ..\app_icon_backup.ico
-          flutter create --platforms=windows .
-          Copy-Item ..\app_icon_backup.ico windows\runner\resources\app_icon.ico -Force
-        shell: pwsh
+        run: flutter create --platforms=windows .
 
       - name: Install dependencies
         working-directory: waferdb_app
