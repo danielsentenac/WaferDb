@@ -5,7 +5,7 @@
 #define AppName "WaferDB"
 #define AppPublisher "INFN - VIRGO"
 #define AppExeName "waferdb_app.exe"
-#define BuildDir "build\windows\x64\runner\Release"
+#define BuildDir "..\build\windows\x64\runner\Release"
 
 [Setup]
 AppId={{B3F2A1C4-7E5D-4F8A-9B2C-1D3E6F7A8B9C}
