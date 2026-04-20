@@ -20,10 +20,14 @@ abstract class BaseApiServlet extends HttpServlet {
             response.setContentType("application/json");
             response.setHeader("Access-Control-Allow-Origin", config.allowedOrigin());
             response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-            response.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS,PUT");
+            response.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS,PUT,PATCH");
 
             if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
                 response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+                return;
+            }
+            if ("PATCH".equalsIgnoreCase(request.getMethod())) {
+                doPatch(request, response);
                 return;
             }
             super.service(request, response);
@@ -58,6 +62,10 @@ abstract class BaseApiServlet extends HttpServlet {
 
     protected void sendCreated(HttpServletResponse response, Object payload) throws IOException {
         sendJson(response, HttpServletResponse.SC_CREATED, payload);
+    }
+
+    protected void doPatch(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        sendError(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED, "PATCH not supported.");
     }
 
     protected boolean isConstraintError(SQLException exception) {

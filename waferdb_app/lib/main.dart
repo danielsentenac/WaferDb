@@ -445,6 +445,69 @@ class _WaferHomePageState extends State<WaferHomePage> {
     );
   }
 
+  Future<void> _runEdit(
+    Future<WaferDetail> Function() action,
+    String successMessage,
+  ) async {
+    setState(() => _busy = true);
+    try {
+      final refreshed = await action();
+      if (!mounted) return;
+      _showSnack(successMessage);
+      setState(() => _selectedDetail = refreshed);
+      await _refreshData(reloadDetail: false);
+    } on ApiException catch (error) {
+      _showSnack(error.message, isError: true);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _editStatus(int waferId, StatusHistoryEntry entry) async {
+    final lookups = _lookups;
+    if (lookups == null) return;
+    final values = await showStatusDialog(
+      context,
+      lookups,
+      initialEntry: entry,
+    );
+    if (values == null) return;
+    await _runEdit(
+      () => _apiClient.updateStatus(waferId, entry.waferStatusHistoryId, values),
+      'Status updated.',
+    );
+  }
+
+  Future<void> _editActivity(int waferId, ActivityEntry entry) async {
+    final lookups = _lookups;
+    if (lookups == null) return;
+    final values = await showActivityDialog(
+      context,
+      lookups,
+      initialEntry: entry,
+    );
+    if (values == null) return;
+    await _runEdit(
+      () => _apiClient.updateActivity(waferId, entry.activityId, values),
+      'Activity updated.',
+    );
+  }
+
+  Future<void> _editDarkfieldRun(int waferId, DarkfieldRunEntry run) async {
+    final detail = _selectedDetail;
+    if (detail == null) return;
+    final values = await showDarkfieldRunDialog(
+      context,
+      detail,
+      darkfieldRoot: defaultDarkfieldRoot,
+      initialEntry: run,
+    );
+    if (values == null) return;
+    await _runEdit(
+      () => _apiClient.updateDarkfieldRun(waferId, run.darkfieldRunId, values),
+      'Darkfield run updated.',
+    );
+  }
+
   Future<void> _viewHistoryPhoto(
     int waferId,
     WaferMetadataHistoryEntry entry,
@@ -922,6 +985,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
                     .map(
                       (entry) => _StatusHistoryCard(
                         entry: entry,
+                        onEdit: () => _editStatus(detail.wafer.waferId, entry),
                         onDelete: () =>
                             _deleteStatus(detail.wafer.waferId, entry),
                       ),
@@ -948,6 +1012,8 @@ class _WaferHomePageState extends State<WaferHomePage> {
                           if (activity.observations != null)
                             activity.observations,
                         ].whereType<String>().join('  •  '),
+                        onEdit: () =>
+                            _editActivity(detail.wafer.waferId, activity),
                         onDelete: () =>
                             _deleteActivity(detail.wafer.waferId, activity),
                       ),
@@ -965,6 +1031,8 @@ class _WaferHomePageState extends State<WaferHomePage> {
                     .map(
                       (run) => _DarkfieldRunCard(
                         run: run,
+                        onEdit: () =>
+                            _editDarkfieldRun(detail.wafer.waferId, run),
                         onDelete: () =>
                             _deleteDarkfieldRun(detail.wafer.waferId, run),
                       ),
@@ -1417,9 +1485,10 @@ class _SectionPanel extends StatelessWidget {
 }
 
 class _DarkfieldRunCard extends StatelessWidget {
-  const _DarkfieldRunCard({required this.run, this.onDelete});
+  const _DarkfieldRunCard({required this.run, this.onEdit, this.onDelete});
 
   final DarkfieldRunEntry run;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -1446,6 +1515,12 @@ class _DarkfieldRunCard extends StatelessWidget {
               ),
               if (run.activityId != null)
                 _MiniPill(label: 'Activity #${run.activityId}'),
+              if (onEdit != null)
+                IconButton(
+                  tooltip: 'Edit run',
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: onEdit,
+                ),
               if (onDelete != null)
                 IconButton(
                   tooltip: 'Delete run',
@@ -1635,12 +1710,14 @@ class _TimelineTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.caption,
+    this.onEdit,
     this.onDelete,
   });
 
   final String title;
   final String subtitle;
   final String caption;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -1687,6 +1764,12 @@ class _TimelineTile extends StatelessWidget {
               ],
             ),
           ),
+          if (onEdit != null)
+            IconButton(
+              tooltip: 'Edit entry',
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              onPressed: onEdit,
+            ),
           if (onDelete != null)
             IconButton(
               tooltip: 'Delete entry',
@@ -1764,10 +1847,14 @@ class _PhotoViewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 860),
+        constraints: BoxConstraints(
+          maxWidth: 860,
+          maxHeight: screenHeight * 0.85,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -1783,12 +1870,14 @@ class _PhotoViewDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Image.memory(
-                  bytes,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
+              Flexible(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -1808,9 +1897,10 @@ class _PhotoViewDialog extends StatelessWidget {
 }
 
 class _StatusHistoryCard extends StatelessWidget {
-  const _StatusHistoryCard({required this.entry, this.onDelete});
+  const _StatusHistoryCard({required this.entry, this.onEdit, this.onDelete});
 
   final StatusHistoryEntry entry;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -1860,6 +1950,12 @@ class _StatusHistoryCard extends StatelessWidget {
               ],
             ),
           ),
+          if (onEdit != null)
+            IconButton(
+              tooltip: 'Edit entry',
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              onPressed: onEdit,
+            ),
           if (onDelete != null)
             IconButton(
               tooltip: 'Delete entry',

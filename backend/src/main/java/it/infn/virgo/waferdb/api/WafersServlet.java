@@ -172,6 +172,163 @@ public final class WafersServlet extends BaseApiServlet {
         }
     }
 
+    @Override
+    protected void doPatch(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        try (Connection connection = openConnection()) {
+            request = RequestUtil.withParsedBody(request);
+            List<String> segments = RequestUtil.pathSegments(request);
+
+            if (segments.size() == 3 && "statuses".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long statusHistoryId = RequestUtil.requiredLongPathSegment(segments.get(2), "status history id");
+                sendOk(response, updateStatusHistory(connection, waferId, statusHistoryId, request));
+                return;
+            }
+
+            if (segments.size() == 3 && "activities".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long activityId = RequestUtil.requiredLongPathSegment(segments.get(2), "activity id");
+                sendOk(response, updateActivity(connection, waferId, activityId, request));
+                return;
+            }
+
+            if (segments.size() == 3 && "darkfield-runs".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long runId = RequestUtil.requiredLongPathSegment(segments.get(2), "darkfield run id");
+                sendOk(response, updateDarkfieldRun(connection, waferId, runId, request));
+                return;
+            }
+
+            sendError(response, HttpServletResponse.SC_NOT_FOUND, "Unsupported wafer API path.");
+        } catch (IllegalArgumentException exception) {
+            sendError(response, HttpServletResponse.SC_BAD_REQUEST, exception.getMessage());
+        } catch (SQLException exception) {
+            int status = isConstraintError(exception)
+                ? HttpServletResponse.SC_BAD_REQUEST
+                : HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+            sendError(response, status, exception.getMessage());
+        }
+    }
+
+    private Map<String, Object> updateStatusHistory(
+        Connection connection, long waferId, long statusHistoryId, HttpServletRequest request
+    ) throws SQLException {
+        String sql = ""
+            + "UPDATE wafer_status_history SET "
+            + "status_id = (SELECT status_id FROM wafer_statuses WHERE code = ?), "
+            + "effective_at = ?, cleared_at = ?, notes = ? "
+            + "WHERE wafer_id = ? AND wafer_status_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, RequestUtil.required(request, "statusCode"));
+            statement.setString(2, RequestUtil.required(request, "effectiveAt"));
+            statement.setString(3, RequestUtil.optional(request, "clearedAt"));
+            statement.setString(4, RequestUtil.optional(request, "notes"));
+            statement.setLong(5, waferId);
+            statement.setLong(6, statusHistoryId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("Status history record not found.");
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
+    }
+
+    private Map<String, Object> updateActivity(
+        Connection connection, long waferId, long activityId, HttpServletRequest request
+    ) throws SQLException {
+        String sql = ""
+            + "UPDATE wafer_activities SET "
+            + "purpose_id = (SELECT purpose_id FROM usage_purposes WHERE code = ?), "
+            + "location_id = (SELECT location_id FROM locations WHERE code = ?), "
+            + "observed_status_id = (SELECT status_id FROM wafer_statuses WHERE code = ?), "
+            + "exposure_quantity = ?, exposure_unit = ?, "
+            + "started_at = ?, ended_at = ?, observations = ? "
+            + "WHERE wafer_id = ? AND activity_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, RequestUtil.required(request, "purposeCode"));
+            statement.setString(2, RequestUtil.required(request, "locationCode"));
+            statement.setString(3, RequestUtil.optional(request, "observedStatusCode"));
+            Double exposureQuantity = RequestUtil.optionalDouble(request, "exposureQuantity");
+            if (exposureQuantity == null) {
+                throw new IllegalArgumentException("Missing required parameter: exposureQuantity");
+            }
+            statement.setDouble(4, exposureQuantity);
+            statement.setString(5, RequestUtil.required(request, "exposureUnit"));
+            statement.setString(6, RequestUtil.optional(request, "startedAt"));
+            statement.setString(7, RequestUtil.optional(request, "endedAt"));
+            statement.setString(8, RequestUtil.optional(request, "observations"));
+            statement.setLong(9, waferId);
+            statement.setLong(10, activityId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("Activity not found.");
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
+    }
+
+    private Map<String, Object> updateDarkfieldRun(
+        Connection connection, long waferId, long runId, HttpServletRequest request
+    ) throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            Long activityId = RequestUtil.optionalLong(request, "activityId");
+            if (activityId != null && !activityBelongsToWafer(connection, waferId, activityId.longValue())) {
+                throw new IllegalArgumentException(
+                    "Activity " + activityId + " does not belong to wafer " + waferId + '.'
+                );
+            }
+
+            String sql = ""
+                + "UPDATE darkfield_runs SET "
+                + "run_type = ?, measured_at = ?, summary_notes = ?, data_path = ?, activity_id = ? "
+                + "WHERE wafer_id = ? AND darkfield_run_id = ?";
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, RequestUtil.required(request, "runType"));
+                statement.setString(2, RequestUtil.required(request, "measuredAt"));
+                statement.setString(3, RequestUtil.optional(request, "summaryNotes"));
+                statement.setString(4, RequestUtil.required(request, "dataPath"));
+                statement.setObject(5, activityId);
+                statement.setLong(6, waferId);
+                statement.setLong(7, runId);
+                if (statement.executeUpdate() == 0) {
+                    throw new IllegalArgumentException("Darkfield run not found.");
+                }
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM darkfield_bin_summaries WHERE darkfield_run_id = ?")) {
+                statement.setLong(1, runId);
+                statement.executeUpdate();
+            }
+
+            int binCount = RequestUtil.optionalInteger(request, "binCount", 0, 200);
+            for (int index = 0; index < binCount; index++) {
+                insertDarkfieldBinSummary(connection, runId, index + 1, request, "bin" + index + "_");
+            }
+
+            connection.commit();
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ok", true);
+            payload.put("detail", queryWaferDetail(connection, waferId));
+            return payload;
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } catch (RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(originalAutoCommit);
+        }
+    }
+
     private Map<String, Object> deleteRow(
         Connection connection,
         long waferId,

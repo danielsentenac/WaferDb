@@ -27,11 +27,12 @@ Future<Map<String, String>?> showCreateWaferDialog(
 
 Future<Map<String, String>?> showStatusDialog(
   BuildContext context,
-  LookupBundle lookups,
-) {
+  LookupBundle lookups, {
+  StatusHistoryEntry? initialEntry,
+}) {
   return showDialog<Map<String, String>>(
     context: context,
-    builder: (context) => _StatusDialog(lookups: lookups),
+    builder: (context) => _StatusDialog(lookups: lookups, initialEntry: initialEntry),
   );
 }
 
@@ -47,11 +48,12 @@ Future<Map<String, String>?> showWaferHistoryDialog(
 
 Future<Map<String, String>?> showActivityDialog(
   BuildContext context,
-  LookupBundle lookups,
-) {
+  LookupBundle lookups, {
+  ActivityEntry? initialEntry,
+}) {
   return showDialog<Map<String, String>>(
     context: context,
-    builder: (context) => _ActivityDialog(lookups: lookups),
+    builder: (context) => _ActivityDialog(lookups: lookups, initialEntry: initialEntry),
   );
 }
 
@@ -80,6 +82,7 @@ Future<Map<String, String>?> showDarkfieldRunDialog(
   WaferDetail detail, {
   required String darkfieldRoot,
   DarkfieldSummaryImporter importSummary = importDarkfieldSummary,
+  DarkfieldRunEntry? initialEntry,
 }) {
   return showDialog<Map<String, String>>(
     context: context,
@@ -87,6 +90,7 @@ Future<Map<String, String>?> showDarkfieldRunDialog(
       detail: detail,
       darkfieldRoot: darkfieldRoot,
       importSummary: importSummary,
+      initialEntry: initialEntry,
     ),
   );
 }
@@ -363,9 +367,10 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
 }
 
 class _StatusDialog extends StatefulWidget {
-  const _StatusDialog({required this.lookups});
+  const _StatusDialog({required this.lookups, this.initialEntry});
 
   final LookupBundle lookups;
+  final StatusHistoryEntry? initialEntry;
 
   @override
   State<_StatusDialog> createState() => _StatusDialogState();
@@ -381,12 +386,14 @@ class _StatusDialogState extends State<_StatusDialog> {
   @override
   void initState() {
     super.initState();
-    _effectiveAtController = TextEditingController(text: _nowTimestamp());
-    _clearedAtController = TextEditingController();
-    _notesController = TextEditingController();
-    _statusCode = widget.lookups.statuses.isNotEmpty
-        ? widget.lookups.statuses.first.code
-        : null;
+    final entry = widget.initialEntry;
+    _effectiveAtController = TextEditingController(
+      text: entry?.effectiveAt ?? _nowTimestamp(),
+    );
+    _clearedAtController = TextEditingController(text: entry?.clearedAt ?? '');
+    _notesController = TextEditingController(text: entry?.notes ?? '');
+    _statusCode = entry?.statusCode ??
+        (widget.lookups.statuses.isNotEmpty ? widget.lookups.statuses.first.code : null);
   }
 
   @override
@@ -400,7 +407,7 @@ class _StatusDialogState extends State<_StatusDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Append Status'),
+      title: Text(widget.initialEntry == null ? 'Append Status' : 'Edit Status'),
       content: SizedBox(
         width: 540,
         child: Form(
@@ -721,9 +728,10 @@ class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
 }
 
 class _ActivityDialog extends StatefulWidget {
-  const _ActivityDialog({required this.lookups});
+  const _ActivityDialog({required this.lookups, this.initialEntry});
 
   final LookupBundle lookups;
+  final ActivityEntry? initialEntry;
 
   @override
   State<_ActivityDialog> createState() => _ActivityDialogState();
@@ -743,19 +751,40 @@ class _ActivityDialogState extends State<_ActivityDialog> {
   @override
   void initState() {
     super.initState();
-    _exposureQuantityController = TextEditingController(text: '1');
-    _startedAtController = TextEditingController(text: _nowTimestamp());
-    _endedAtController = TextEditingController(text: _nowTimestamp());
-    _observationsController = TextEditingController();
-    _purposeCode = widget.lookups.purposes.isNotEmpty
-        ? widget.lookups.purposes.first.code
-        : null;
-    final activeLocations = widget.lookups.locations
-        .where((location) => location.active)
-        .toList();
-    _locationCode = activeLocations.isNotEmpty
-        ? activeLocations.first.code
-        : null;
+    final entry = widget.initialEntry;
+    final qty = entry?.exposureQuantity;
+    _exposureQuantityController = TextEditingController(
+      text: qty == null
+          ? '1'
+          : (qty == qty.truncateToDouble()
+              ? qty.toStringAsFixed(0)
+              : qty.toString()),
+    );
+    _startedAtController = TextEditingController(
+      text: entry?.startedAt ?? _nowTimestamp(),
+    );
+    _endedAtController = TextEditingController(
+      text: entry?.endedAt ?? _nowTimestamp(),
+    );
+    _observationsController = TextEditingController(
+      text: entry?.observations ?? '',
+    );
+    if (entry != null) {
+      _purposeCode = entry.purposeCode;
+      _locationCode = entry.locationCode;
+      _observedStatusCode = entry.statusCode;
+      _exposureUnit = entry.exposureUnit;
+    } else {
+      _purposeCode = widget.lookups.purposes.isNotEmpty
+          ? widget.lookups.purposes.first.code
+          : null;
+      final activeLocations = widget.lookups.locations
+          .where((location) => location.active)
+          .toList();
+      _locationCode = activeLocations.isNotEmpty
+          ? activeLocations.first.code
+          : null;
+    }
   }
 
   @override
@@ -773,7 +802,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
         .where((location) => location.active)
         .toList();
     return AlertDialog(
-      title: const Text('Append Activity'),
+      title: Text(widget.initialEntry == null ? 'Append Activity' : 'Edit Activity'),
       content: SizedBox(
         width: 540,
         child: Form(
@@ -903,18 +932,23 @@ class _ActivityDialogState extends State<_ActivityDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    Navigator.of(context).pop(
-      {
-        'purposeCode': _purposeCode ?? '',
-        'locationCode': _locationCode ?? '',
-        'observedStatusCode': _observedStatusCode ?? '',
-        'exposureQuantity': _exposureQuantityController.text.trim(),
-        'exposureUnit': _exposureUnit,
-        'startedAt': _startedAtController.text.trim(),
-        'endedAt': _endedAtController.text.trim(),
-        'observations': _observationsController.text.trim(),
-      }..removeWhere((_, value) => value.trim().isEmpty),
-    );
+    final values = <String, String>{
+      'purposeCode': _purposeCode ?? '',
+      'locationCode': _locationCode ?? '',
+      'exposureQuantity': _exposureQuantityController.text.trim(),
+      'exposureUnit': _exposureUnit,
+    };
+    if ((_observedStatusCode ?? '').isNotEmpty) {
+      values['observedStatusCode'] = _observedStatusCode!;
+    }
+    for (final entry in {
+      'startedAt': _startedAtController.text.trim(),
+      'endedAt': _endedAtController.text.trim(),
+      'observations': _observationsController.text.trim(),
+    }.entries) {
+      if (entry.value.isNotEmpty) values[entry.key] = entry.value;
+    }
+    Navigator.of(context).pop(values);
   }
 }
 
@@ -1046,11 +1080,13 @@ class _DarkfieldRunDialog extends StatefulWidget {
     required this.detail,
     required this.darkfieldRoot,
     required this.importSummary,
+    this.initialEntry,
   });
 
   final WaferDetail detail;
   final String darkfieldRoot;
   final DarkfieldSummaryImporter importSummary;
+  final DarkfieldRunEntry? initialEntry;
 
   @override
   State<_DarkfieldRunDialog> createState() => _DarkfieldRunDialogState();
@@ -1069,15 +1105,30 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
   @override
   void initState() {
     super.initState();
-    _measuredAtController = TextEditingController(text: _nowTimestamp());
-    final normalizedRoot = widget.darkfieldRoot.endsWith('/')
-        ? widget.darkfieldRoot.substring(0, widget.darkfieldRoot.length - 1)
-        : widget.darkfieldRoot;
-    _dataPathController = TextEditingController(
-      text: '$normalizedRoot/${widget.detail.wafer.name}/${_todayDate()}',
+    final entry = widget.initialEntry;
+    _measuredAtController = TextEditingController(
+      text: entry?.measuredAt ?? _nowTimestamp(),
     );
-    _summaryNotesController = TextEditingController();
-    _bins.add(_DarkfieldBinDraft());
+    if (entry != null) {
+      _dataPathController = TextEditingController(text: entry.dataPath);
+      _summaryNotesController = TextEditingController(text: entry.summaryNotes ?? '');
+      _runType = entry.runType;
+      _activityId = entry.activityId;
+      _bins.addAll(
+        entry.binSummaries.isEmpty
+            ? [_DarkfieldBinDraft()]
+            : entry.binSummaries.map(_DarkfieldBinDraft.fromExisting),
+      );
+    } else {
+      final normalizedRoot = widget.darkfieldRoot.endsWith('/')
+          ? widget.darkfieldRoot.substring(0, widget.darkfieldRoot.length - 1)
+          : widget.darkfieldRoot;
+      _dataPathController = TextEditingController(
+        text: '$normalizedRoot/${widget.detail.wafer.name}/${_todayDate()}',
+      );
+      _summaryNotesController = TextEditingController();
+      _bins.add(_DarkfieldBinDraft());
+    }
   }
 
   @override
@@ -1094,7 +1145,9 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Add darkfield run for ${widget.detail.wafer.name}'),
+      title: Text(widget.initialEntry == null
+          ? 'Add darkfield run for ${widget.detail.wafer.name}'
+          : 'Edit darkfield run for ${widget.detail.wafer.name}'),
       content: SizedBox(
         width: 920,
         child: Form(
@@ -1434,6 +1487,22 @@ class _DarkfieldBinDraft {
       particleCountController = TextEditingController(text: '0'),
       totalAreaController = TextEditingController(),
       notesController = TextEditingController();
+
+  _DarkfieldBinDraft.fromExisting(DarkfieldBinSummaryEntry existing)
+    : draftId = _nextDraftId++,
+      minSizeUm = existing.minSizeUm,
+      maxSizeUm = existing.maxSizeUm,
+      particleDensityCm2 = existing.particleDensityCm2,
+      labelController = TextEditingController(text: existing.binLabel ?? ''),
+      particleCountController = TextEditingController(
+        text: existing.particleCount.toString(),
+      ),
+      totalAreaController = TextEditingController(
+        text: existing.totalAreaUm2 != null
+            ? _formatAreaUm2(existing.totalAreaUm2!)
+            : '',
+      ),
+      notesController = TextEditingController(text: existing.notes ?? '');
 
   _DarkfieldBinDraft.fromImported(DarkfieldImportedBin imported)
     : draftId = _nextDraftId++,
