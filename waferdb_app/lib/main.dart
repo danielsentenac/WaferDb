@@ -953,32 +953,6 @@ class _WaferHomePageState extends State<WaferHomePage> {
     return [
       _buildDetailHeader(detail, compact: compact),
       const SizedBox(height: 20),
-      compact
-          ? Column(
-              children: [
-                _MetaCard(label: 'Acquired', value: detail.wafer.acquiredDate),
-                const SizedBox(height: 12),
-                _MetaCard(
-                  label: 'Roughness',
-                  value: detail.wafer.roughnessNm == null
-                      ? 'n/a'
-                      : '${detail.wafer.roughnessNm} nm',
-                ),
-              ],
-            )
-          : Wrap(
-              spacing: 14,
-              runSpacing: 14,
-              children: [
-                _MetaCard(label: 'Acquired', value: detail.wafer.acquiredDate),
-                _MetaCard(
-                  label: 'Roughness',
-                  value: detail.wafer.roughnessNm == null
-                      ? 'n/a'
-                      : '${detail.wafer.roughnessNm} nm',
-                ),
-              ],
-            ),
       const SizedBox(height: 18),
       _SectionPanel(
         title: 'Wafer data history',
