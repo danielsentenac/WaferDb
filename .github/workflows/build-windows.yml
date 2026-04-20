@@ -7,6 +7,10 @@ on:
         description: 'WAFERDB_API_BASE URL (leave blank for default)'
         required: false
         default: ''
+      darkfield_root:
+        description: 'WAFERDB_DARKFIELD_ROOT path (leave blank for default)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -33,7 +37,12 @@ jobs:
           $apiBase = "${{ inputs.api_base }}"
           if (-not $apiBase) { $apiBase = "${{ vars.WAFERDB_API_BASE }}" }
           if (-not $apiBase) { $apiBase = "http://127.0.0.1:8081/WaferDb/api" }
-          flutter build windows --release "--dart-define=WAFERDB_API_BASE=$apiBase"
+          $darkfieldRoot = "${{ inputs.darkfield_root }}"
+          if (-not $darkfieldRoot) { $darkfieldRoot = "${{ vars.WAFERDB_DARKFIELD_ROOT }}" }
+          if (-not $darkfieldRoot) { $darkfieldRoot = "data/darkfield" }
+          flutter build windows --release `
+            "--dart-define=WAFERDB_API_BASE=$apiBase" `
+            "--dart-define=WAFERDB_DARKFIELD_ROOT=$darkfieldRoot"
 
       - name: Get app version
         id: version
