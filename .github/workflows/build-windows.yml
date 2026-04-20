@@ -21,7 +21,11 @@ jobs:
 
       - name: Generate Windows platform scaffold
         working-directory: waferdb_app
-        run: flutter create --platforms=windows .
+        run: |
+          Copy-Item windows\runner\resources\app_icon.ico ..\app_icon_backup.ico
+          flutter create --platforms=windows .
+          Copy-Item ..\app_icon_backup.ico windows\runner\resources\app_icon.ico -Force
+        shell: pwsh
 
       - name: Install dependencies
         working-directory: waferdb_app
@@ -30,10 +34,10 @@ jobs:
       - name: Build Windows release
         working-directory: waferdb_app
         run: |
-          $dartDefines = @(
-            "--dart-define=WAFERDB_API_BASE=${{ inputs.api_base != '' && inputs.api_base || vars.WAFERDB_API_BASE != '' && vars.WAFERDB_API_BASE || 'http://127.0.0.1:8081/WaferDb/api' }}"
-          )
-          flutter build windows --release @dartDefines
+          $apiBase = "${{ inputs.api_base }}"
+          if (-not $apiBase) { $apiBase = "${{ vars.WAFERDB_API_BASE }}" }
+          if (-not $apiBase) { $apiBase = "http://127.0.0.1:8081/WaferDb/api" }
+          flutter build windows --release "--dart-define=WAFERDB_API_BASE=$apiBase"
 
       - name: Get app version
         id: version
