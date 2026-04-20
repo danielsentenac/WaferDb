@@ -1005,7 +1005,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
                     .map(
                       (activity) => _TimelineTile(
                         title:
-                            '${activity.purposeLabel} at ${activity.locationCode}',
+                            '#${activity.activityId}  ${activity.purposeLabel} at ${activity.locationCode}',
                         subtitle:
                             '${activity.exposureQuantity} ${activity.exposureUnit}',
                         caption: [
