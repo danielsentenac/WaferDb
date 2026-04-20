@@ -1,0 +1,73 @@
+name: Build Linux bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: 'WAFERDB_API_BASE URL (leave blank for default)'
+        required: false
+        default: ''
+      darkfield_root:
+        description: 'WAFERDB_DARKFIELD_ROOT path (leave blank for default)'
+        required: false
+        default: ''
+      darkfield_import_host:
+        description: 'WAFERDB_DARKFIELD_IMPORT_HOST (leave blank for default)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Install dependencies
+        working-directory: waferdb_app
+        run: flutter pub get
+
+      - name: Build Linux release
+        working-directory: waferdb_app
+        run: |
+          API_BASE="${{ inputs.api_base }}"
+          if [ -z "$API_BASE" ]; then API_BASE="${{ vars.WAFERDB_API_BASE }}"; fi
+          if [ -z "$API_BASE" ]; then API_BASE="http://127.0.0.1:8081/WaferDb/api"; fi
+          DARKFIELD_ROOT="${{ inputs.darkfield_root }}"
+          if [ -z "$DARKFIELD_ROOT" ]; then DARKFIELD_ROOT="${{ vars.WAFERDB_DARKFIELD_ROOT }}"; fi
+          if [ -z "$DARKFIELD_ROOT" ]; then DARKFIELD_ROOT="data/darkfield"; fi
+          IMPORT_HOST="${{ inputs.darkfield_import_host }}"
+          if [ -z "$IMPORT_HOST" ]; then IMPORT_HOST="${{ vars.WAFERDB_DARKFIELD_IMPORT_HOST }}"; fi
+          if [ -z "$IMPORT_HOST" ]; then IMPORT_HOST="olserver135"; fi
+          flutter build linux --release \
+            "--dart-define=WAFERDB_API_BASE=$API_BASE" \
+            "--dart-define=WAFERDB_DARKFIELD_ROOT=$DARKFIELD_ROOT" \
+            "--dart-define=WAFERDB_DARKFIELD_IMPORT_HOST=$IMPORT_HOST"
+
+      - name: Get app version
+        id: version
+        working-directory: waferdb_app
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create tarball
+        run: |
+          tar -czf waferdb-linux-${{ steps.version.outputs.version }}.tar.gz \
+            -C waferdb_app/build/linux/x64/release/bundle .
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: waferdb-linux-bundle
+          path: waferdb-linux-*.tar.gz
+          if-no-files-found: error
