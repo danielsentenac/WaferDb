@@ -45,6 +45,15 @@
     </servlet-mapping>
 
     <servlet>
+        <servlet-name>darkfield-import</servlet-name>
+        <servlet-class>it.infn.virgo.waferdb.api.DarkfieldImportServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>darkfield-import</servlet-name>
+        <url-pattern>/api/darkfield-import</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
         <servlet-name>wafers</servlet-name>
         <servlet-class>it.infn.virgo.waferdb.api.WafersServlet</servlet-class>
     </servlet>

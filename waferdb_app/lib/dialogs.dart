@@ -5,15 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'api_client.dart';
 import 'app_config.dart';
 import 'darkfield_import.dart';
 import 'models.dart';
-
-typedef DarkfieldSummaryImporter =
-    Future<DarkfieldImportedSummary> Function(
-      String requestedPath, {
-      String host,
-    });
 
 Future<Map<String, String>?> showCreateWaferDialog(
   BuildContext context,
@@ -81,7 +76,7 @@ Future<Map<String, String>?> showDarkfieldRunDialog(
   BuildContext context,
   WaferDetail detail, {
   required String darkfieldRoot,
-  DarkfieldSummaryImporter importSummary = importDarkfieldSummary,
+  required ApiClient apiClient,
   DarkfieldRunEntry? initialEntry,
 }) {
   return showDialog<Map<String, String>>(
@@ -89,7 +84,7 @@ Future<Map<String, String>?> showDarkfieldRunDialog(
     builder: (context) => _DarkfieldRunDialog(
       detail: detail,
       darkfieldRoot: darkfieldRoot,
-      importSummary: importSummary,
+      apiClient: apiClient,
       initialEntry: initialEntry,
     ),
   );
@@ -1079,13 +1074,13 @@ class _DarkfieldRunDialog extends StatefulWidget {
   const _DarkfieldRunDialog({
     required this.detail,
     required this.darkfieldRoot,
-    required this.importSummary,
+    required this.apiClient,
     this.initialEntry,
   });
 
   final WaferDetail detail;
   final String darkfieldRoot;
-  final DarkfieldSummaryImporter importSummary;
+  final ApiClient apiClient;
   final DarkfieldRunEntry? initialEntry;
 
   @override
@@ -1364,9 +1359,9 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
 
     setState(() => _isImporting = true);
     try {
-      final imported = await widget.importSummary(
+      final imported = await importDarkfieldSummary(
         requestedPath,
-        host: defaultDarkfieldImportHost,
+        widget.apiClient,
       );
       if (!mounted) {
         return;
@@ -1389,8 +1384,8 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
       if (!mounted) {
         return;
       }
-      final message = error is ProcessException
-          ? (error.message.isEmpty ? error.toString() : error.message)
+      final message = error is ApiException
+          ? error.message
           : error.toString().replaceFirst('Exception: ', '');
       _showDialogMessage(message);
     } finally {

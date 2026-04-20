@@ -253,6 +253,14 @@ class ApiClient {
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 
+  Future<Map<String, dynamic>> importDarkfieldSummary(String path) async {
+    return await _request(
+      'GET',
+      'darkfield-import',
+      queryParameters: {'path': path},
+    );
+  }
+
   Future<WaferDetail> addDarkfieldRun(
     int waferId,
     Map<String, String> values,

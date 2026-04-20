@@ -499,6 +499,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
       context,
       detail,
       darkfieldRoot: defaultDarkfieldRoot,
+      apiClient: _apiClient,
       initialEntry: run,
     );
     if (values == null) return;
@@ -570,6 +571,7 @@ class _WaferHomePageState extends State<WaferHomePage> {
       context,
       detail,
       darkfieldRoot: defaultDarkfieldRoot,
+      apiClient: _apiClient,
     );
     if (values == null) {
       return;

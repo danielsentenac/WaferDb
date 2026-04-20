@@ -1,10 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'app_config.dart';
-
-bool get _sshSupported =>
-    Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+import 'api_client.dart';
 
 class DarkfieldImportedBin {
   const DarkfieldImportedBin({
@@ -57,41 +53,16 @@ class DarkfieldImportedSummary {
 }
 
 Future<DarkfieldImportedSummary> importDarkfieldSummary(
-  String requestedPath, {
-  String host = defaultDarkfieldImportHost,
-}) async {
-  if (!_sshSupported) {
-    throw const FormatException(
-      'Darkfield import via SSH is only supported on desktop (Linux, Windows, macOS).',
-    );
-  }
+  String requestedPath,
+  ApiClient apiClient,
+) async {
   final trimmedPath = requestedPath.trim();
   if (trimmedPath.isEmpty) {
     throw const FormatException('Data path is required.');
   }
 
-  final remoteCommand = _buildRemoteSummaryFetchCommand(trimmedPath);
-  final result = await Process.run(
-    'ssh',
-    [host, remoteCommand],
-    stdoutEncoding: utf8,
-    stderrEncoding: utf8,
-  );
+  final payload = await apiClient.importDarkfieldSummary(trimmedPath);
 
-  if (result.exitCode != 0) {
-    final stderr = (result.stderr as String?)?.trim();
-    throw ProcessException(
-      'ssh',
-      [host, remoteCommand],
-      stderr == null || stderr.isEmpty
-          ? 'Failed to import darkfield results.'
-          : stderr,
-      result.exitCode,
-    );
-  }
-
-  final payload =
-      jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
   final summaryFilePath = payload['path'] as String? ?? '';
   final encodedContent = payload['content'] as String? ?? '';
   if (summaryFilePath.isEmpty || encodedContent.isEmpty) {
@@ -106,32 +77,30 @@ Future<DarkfieldImportedSummary> importDarkfieldSummary(
     summaryFilePath: summaryFilePath,
   );
 
-  // Enrich bins with exact particle areas from per-frame CSV files.
-  final areasByBinIndex = await _fetchParticleAreasByBin(
-    parsed.resolvedDirectoryPath,
-    host: host,
-  );
-  if (areasByBinIndex.isEmpty) {
+  final rawAreas = payload['particleAreas'] as Map<String, dynamic>?;
+  if (rawAreas == null || rawAreas.isEmpty) {
     return parsed;
   }
 
-  final enrichedBins = parsed.bins
-      .map((bin) {
-        final csvBinIndex = _matchCsvBinIndex(bin);
-        if (csvBinIndex == null) return bin;
-        final totalArea = areasByBinIndex[csvBinIndex];
-        if (totalArea == null) return bin;
-        return DarkfieldImportedBin(
-          label: bin.label,
-          particleCount: bin.particleCount,
-          minSizeUm: bin.minSizeUm,
-          maxSizeUm: bin.maxSizeUm,
-          particleDensityCm2: bin.particleDensityCm2,
-          totalAreaUm2: totalArea,
-          notes: bin.notes,
-        );
-      })
-      .toList(growable: false);
+  final areasByBinIndex = rawAreas.map(
+    (key, value) => MapEntry(int.tryParse(key) ?? -1, (value as num).toDouble()),
+  );
+
+  final enrichedBins = parsed.bins.map((bin) {
+    final csvBinIndex = _matchCsvBinIndex(bin);
+    if (csvBinIndex == null) return bin;
+    final totalArea = areasByBinIndex[csvBinIndex];
+    if (totalArea == null) return bin;
+    return DarkfieldImportedBin(
+      label: bin.label,
+      particleCount: bin.particleCount,
+      minSizeUm: bin.minSizeUm,
+      maxSizeUm: bin.maxSizeUm,
+      particleDensityCm2: bin.particleDensityCm2,
+      totalAreaUm2: totalArea,
+      notes: bin.notes,
+    );
+  }).toList(growable: false);
 
   return DarkfieldImportedSummary(
     summaryFilePath: parsed.summaryFilePath,
@@ -143,36 +112,6 @@ Future<DarkfieldImportedSummary> importDarkfieldSummary(
   );
 }
 
-Future<Map<int, double>> _fetchParticleAreasByBin(
-  String directoryPath, {
-  required String host,
-}) async {
-  try {
-    final command = _buildRemoteParticleAreaFetchCommand(directoryPath);
-    final result = await Process.run(
-      'ssh',
-      [host, command],
-      stdoutEncoding: utf8,
-      stderrEncoding: utf8,
-    );
-    if (result.exitCode != 0) return {};
-    final raw = jsonDecode((result.stdout as String).trim());
-    if (raw is! Map) return {};
-    final areas = <int, double>{};
-    raw.forEach((key, value) {
-      final index = int.tryParse(key.toString());
-      final area = value is num
-          ? value.toDouble()
-          : double.tryParse(value.toString());
-      if (index != null && area != null) {
-        areas[index] = area;
-      }
-    });
-    return areas;
-  } catch (_) {
-    return {};
-  }
-}
 
 int? _matchCsvBinIndex(DarkfieldImportedBin bin) {
   if (bin.minSizeUm == null) return null;
@@ -358,65 +297,6 @@ String _formatNumber(double value) {
   return value.toString();
 }
 
-String _buildRemoteParticleAreaFetchCommand(String directoryPath) {
-  final encodedPath = base64Encode(utf8.encode(directoryPath));
-  final script = [
-    'import base64, csv, json, math, pathlib',
-    'directory = pathlib.Path(base64.b64decode("$encodedPath").decode("utf-8"))',
-    'areas = {}',
-    'for f in sorted(directory.glob("*_particles.csv")):',
-    '    try:',
-    '        with open(f, newline="") as fp:',
-    '            reader = csv.DictReader(fp)',
-    '            for row in reader:',
-    '                try:',
-    '                    b = int(row["bin"])',
-    '                    d = float(row["diameter_um"])',
-    '                    areas[b] = areas.get(b, 0.0) + math.pi * (d / 2) ** 2',
-    '                except (KeyError, ValueError):',
-    '                    pass',
-    '    except Exception:',
-    '        pass',
-    'import sys',
-    'sys.stdout.write(json.dumps({str(k): v for k, v in areas.items()}))',
-  ].join('\n');
-  return "python3 -c '${script.replaceAll("'", r"'\''")}'";
-}
-
-String _buildRemoteSummaryFetchCommand(String requestedPath) {
-  final encodedPath = base64Encode(utf8.encode(requestedPath));
-  final script = [
-    'import base64, json, pathlib, sys',
-    'requested = pathlib.Path(base64.b64decode("$encodedPath").decode("utf-8"))',
-    'names = ["summary_stats.txt", "summary_stat.txt"]',
-    'matches = []',
-    'if requested.is_file():',
-    '    matches = [requested] if requested.name in names else []',
-    'elif requested.is_dir():',
-    '    direct = [requested / name for name in names if (requested / name).is_file()]',
-    '    if len(direct) == 1:',
-    '        matches = direct',
-    '    elif len(direct) > 1:',
-    '        matches = direct',
-    '    else:',
-    '        recursive = []',
-    '        for name in names:',
-    '            recursive.extend(sorted(requested.rglob(name)))',
-    '        matches = recursive',
-    'if len(matches) == 1:',
-    '    path = matches[0]',
-    '    payload = {"path": str(path), "content": base64.b64encode(path.read_bytes()).decode("ascii")}',
-    '    sys.stdout.write(json.dumps(payload))',
-    'elif not matches:',
-    '    sys.stderr.write("No summary_stats.txt found under %s\\n" % requested)',
-    '    sys.exit(2)',
-    'else:',
-    '    preview = "\\n".join(str(path) for path in matches[:10])',
-    '    sys.stderr.write("Multiple summary_stats.txt files found under %s. Use a more specific path.\\n%s\\n" % (requested, preview))',
-    '    sys.exit(3)',
-  ].join('\n');
-  return "python3 -c '${script.replaceAll("'", r"'\''")}'";
-}
 
 class _ImportedBinLabel {
   const _ImportedBinLabel({
