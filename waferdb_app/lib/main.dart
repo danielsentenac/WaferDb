@@ -1002,22 +1002,24 @@ class _WaferHomePageState extends State<WaferHomePage> {
             ? const Text('No activities recorded yet.')
             : Column(
                 children: detail.activities
+                    .asMap()
+                    .entries
                     .map(
-                      (activity) => _TimelineTile(
+                      (e) => _TimelineTile(
                         title:
-                            '#${activity.activityId}  ${activity.purposeLabel} at ${activity.locationCode}',
+                            '#${e.key + 1}  ${e.value.purposeLabel} at ${e.value.locationCode}',
                         subtitle:
-                            '${activity.exposureQuantity} ${activity.exposureUnit}',
+                            '${e.value.exposureQuantity} ${e.value.exposureUnit}',
                         caption: [
-                          if (activity.startedAt != null) activity.startedAt,
-                          if (activity.endedAt != null) activity.endedAt,
-                          if (activity.observations != null)
-                            activity.observations,
+                          if (e.value.startedAt != null) e.value.startedAt,
+                          if (e.value.endedAt != null) e.value.endedAt,
+                          if (e.value.observations != null)
+                            e.value.observations,
                         ].whereType<String>().join('  •  '),
                         onEdit: () =>
-                            _editActivity(detail.wafer.waferId, activity),
+                            _editActivity(detail.wafer.waferId, e.value),
                         onDelete: () =>
-                            _deleteActivity(detail.wafer.waferId, activity),
+                            _deleteActivity(detail.wafer.waferId, e.value),
                       ),
                     )
                     .toList(growable: false),
@@ -1029,17 +1031,28 @@ class _WaferHomePageState extends State<WaferHomePage> {
         child: detail.darkfieldRuns.isEmpty
             ? const Text('No darkfield runs linked to this wafer yet.')
             : Column(
-                children: detail.darkfieldRuns
-                    .map(
-                      (run) => _DarkfieldRunCard(
-                        run: run,
-                        onEdit: () =>
-                            _editDarkfieldRun(detail.wafer.waferId, run),
-                        onDelete: () =>
-                            _deleteDarkfieldRun(detail.wafer.waferId, run),
-                      ),
-                    )
-                    .toList(growable: false),
+                children: () {
+                      final activityIndexById = {
+                        for (final (i, a)
+                            in detail.activities.indexed)
+                          a.activityId: i + 1,
+                      };
+                      return detail.darkfieldRuns
+                          .map(
+                            (run) => _DarkfieldRunCard(
+                              run: run,
+                              activityIndexById: activityIndexById,
+                              onEdit: () =>
+                                  _editDarkfieldRun(detail.wafer.waferId, run),
+                              onDelete: () =>
+                                  _deleteDarkfieldRun(
+                                    detail.wafer.waferId,
+                                    run,
+                                  ),
+                            ),
+                          )
+                          .toList(growable: false);
+                    }(),
               ),
       ),
       if ((_dashboard?.recentActivities ?? const []).isNotEmpty) ...[
@@ -1487,9 +1500,15 @@ class _SectionPanel extends StatelessWidget {
 }
 
 class _DarkfieldRunCard extends StatelessWidget {
-  const _DarkfieldRunCard({required this.run, this.onEdit, this.onDelete});
+  const _DarkfieldRunCard({
+    required this.run,
+    required this.activityIndexById,
+    this.onEdit,
+    this.onDelete,
+  });
 
   final DarkfieldRunEntry run;
+  final Map<int, int> activityIndexById;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
@@ -1515,8 +1534,12 @@ class _DarkfieldRunCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (run.activityId != null)
-                _MiniPill(label: 'Activity #${run.activityId}'),
+              if (run.activityId != null &&
+                  activityIndexById.containsKey(run.activityId))
+                _MiniPill(
+                  label:
+                      'Activity #${activityIndexById[run.activityId]}',
+                ),
               if (onEdit != null)
                 IconButton(
                   tooltip: 'Edit run',
