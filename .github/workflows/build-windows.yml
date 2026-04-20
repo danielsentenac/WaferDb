@@ -44,7 +44,7 @@ jobs:
 
       - name: Build installer
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\waferdb_setup.iss `
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" waferdb_app\windows\waferdb_setup.iss `
             /DAppVersion=${{ steps.version.outputs.version }}
         shell: pwsh
 
