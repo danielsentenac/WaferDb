@@ -19,7 +19,9 @@ class ApiClient {
     : _baseUri = Uri.parse(baseUrl.endsWith('/') ? baseUrl : '$baseUrl/');
 
   final Uri _baseUri;
-  final HttpClient _httpClient = HttpClient();
+  final HttpClient _httpClient = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 15)
+    ..idleTimeout = const Duration(seconds: 15);
 
   Future<LookupBundle> fetchLookups() async {
     final payload = await _request('GET', 'lookups');
@@ -291,6 +293,7 @@ class ApiClient {
         .replace(queryParameters: filteredQuery.isEmpty ? null : filteredQuery);
     final request = await _httpClient.openUrl(method, uri);
     request.headers.set(HttpHeaders.acceptHeader, ContentType.json.mimeType);
+    request.headers.set(HttpHeaders.connectionHeader, 'close');
 
     if (formFields != null) {
       request.headers.contentType = ContentType(
@@ -301,8 +304,10 @@ class ApiClient {
       request.write(Uri(queryParameters: formFields).query);
     }
 
-    final response = await request.close();
-    final body = await utf8.decoder.bind(response).join();
+    final response = await request.close()
+        .timeout(const Duration(seconds: 30));
+    final body = await utf8.decoder.bind(response).join()
+        .timeout(const Duration(seconds: 60));
     final dynamic decoded = body.isEmpty
         ? <String, dynamic>{}
         : jsonDecode(body);
