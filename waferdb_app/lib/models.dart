@@ -48,7 +48,7 @@ class LocationOption {
   final int? parentLocationId;
 
   String get displayLabel =>
-      '$code  ${name.isEmpty ? locationTypeLabel : name}';
+      _formatLocationLabel(name.isEmpty ? '$code $locationTypeLabel' : name);
 
   factory LocationOption.fromJson(Map<String, dynamic> json) {
     return LocationOption(
@@ -61,15 +61,31 @@ class LocationOption {
   }
 }
 
+class LocationTypeOption {
+  const LocationTypeOption({required this.code, required this.label});
+
+  final String code;
+  final String label;
+
+  factory LocationTypeOption.fromJson(Map<String, dynamic> json) {
+    return LocationTypeOption(
+      code: json['code'] as String,
+      label: json['label'] as String,
+    );
+  }
+}
+
 class LookupBundle {
   const LookupBundle({
     required this.statuses,
     required this.purposes,
+    required this.locationTypes,
     required this.locations,
   });
 
   final List<StatusOption> statuses;
   final List<PurposeOption> purposes;
+  final List<LocationTypeOption> locationTypes;
   final List<LocationOption> locations;
 
   factory LookupBundle.fromJson(Map<String, dynamic> json) {
@@ -80,6 +96,9 @@ class LookupBundle {
       purposes: _asMapList(
         json['purposes'],
       ).map(PurposeOption.fromJson).toList(growable: false),
+      locationTypes: _asMapList(
+        json['locationTypes'],
+      ).map(LocationTypeOption.fromJson).toList(growable: false),
       locations: _asMapList(
         json['locations'],
       ).map(LocationOption.fromJson).toList(growable: false),
@@ -96,7 +115,6 @@ class WaferSummary {
     this.referenceInvoice,
     this.roughnessNm,
     this.waferSizeIn,
-    this.waferSizeLabel,
     this.notes,
     this.createdAt,
     this.statusCode,
@@ -111,7 +129,6 @@ class WaferSummary {
   final String? referenceInvoice;
   final double? roughnessNm;
   final double? waferSizeIn;
-  final String? waferSizeLabel;
   final String? notes;
   final String? createdAt;
   final String? statusCode;
@@ -127,7 +144,6 @@ class WaferSummary {
       referenceInvoice: _asString(json['referenceInvoice']),
       roughnessNm: _asDouble(json['roughnessNm']),
       waferSizeIn: _asDouble(json['waferSizeIn']),
-      waferSizeLabel: _asString(json['waferSizeLabel']),
       notes: _asString(json['notes']),
       createdAt: _asString(json['createdAt']),
       statusCode: _asString(json['statusCode']),
@@ -143,6 +159,7 @@ class StatusHistoryEntry {
     required this.statusCode,
     required this.statusLabel,
     required this.effectiveAt,
+    required this.hasPhoto,
     this.clearedAt,
     this.notes,
   });
@@ -151,6 +168,7 @@ class StatusHistoryEntry {
   final String statusCode;
   final String statusLabel;
   final String effectiveAt;
+  final bool hasPhoto;
   final String? clearedAt;
   final String? notes;
 
@@ -160,6 +178,7 @@ class StatusHistoryEntry {
       statusCode: json['statusCode'] as String,
       statusLabel: json['statusLabel'] as String,
       effectiveAt: json['effectiveAt'] as String,
+      hasPhoto: json['hasPhoto'] as bool? ?? false,
       clearedAt: _asString(json['clearedAt']),
       notes: _asString(json['notes']),
     );
@@ -196,6 +215,8 @@ class ActivityEntry {
   final String? endedAt;
   final String? observations;
   final String? createdAt;
+
+  String get displayLocationName => _formatLocationLabel(locationName);
 
   factory ActivityEntry.fromJson(Map<String, dynamic> json) {
     return ActivityEntry(
@@ -291,15 +312,64 @@ class DarkfieldRunEntry {
   }
 }
 
+class WaferMetadataHistoryEntry {
+  const WaferMetadataHistoryEntry({
+    required this.waferMetadataHistoryId,
+    required this.changedAt,
+    required this.name,
+    required this.acquiredDate,
+    required this.waferType,
+    required this.hasPhoto,
+    this.referenceInvoice,
+    this.roughnessNm,
+    this.waferSizeIn,
+    this.notes,
+    this.changeSummary,
+    this.createdAt,
+  });
+
+  final int waferMetadataHistoryId;
+  final String changedAt;
+  final String name;
+  final String acquiredDate;
+  final String waferType;
+  final bool hasPhoto;
+  final String? referenceInvoice;
+  final double? roughnessNm;
+  final double? waferSizeIn;
+  final String? notes;
+  final String? changeSummary;
+  final String? createdAt;
+
+  factory WaferMetadataHistoryEntry.fromJson(Map<String, dynamic> json) {
+    return WaferMetadataHistoryEntry(
+      waferMetadataHistoryId: _asInt(json['waferMetadataHistoryId']) ?? 0,
+      changedAt: json['changedAt'] as String,
+      name: json['name'] as String,
+      acquiredDate: json['acquiredDate'] as String,
+      waferType: json['waferType'] as String,
+      hasPhoto: json['hasPhoto'] as bool? ?? false,
+      referenceInvoice: _asString(json['referenceInvoice']),
+      roughnessNm: _asDouble(json['roughnessNm']),
+      waferSizeIn: _asDouble(json['waferSizeIn']),
+      notes: _asString(json['notes']),
+      changeSummary: _asString(json['changeSummary']),
+      createdAt: _asString(json['createdAt']),
+    );
+  }
+}
+
 class WaferDetail {
   const WaferDetail({
     required this.wafer,
+    required this.metadataHistory,
     required this.statusHistory,
     required this.activities,
     required this.darkfieldRuns,
   });
 
   final WaferSummary wafer;
+  final List<WaferMetadataHistoryEntry> metadataHistory;
   final List<StatusHistoryEntry> statusHistory;
   final List<ActivityEntry> activities;
   final List<DarkfieldRunEntry> darkfieldRuns;
@@ -307,6 +377,9 @@ class WaferDetail {
   factory WaferDetail.fromJson(Map<String, dynamic> json) {
     return WaferDetail(
       wafer: WaferSummary.fromJson(json['wafer'] as Map<String, dynamic>),
+      metadataHistory: _asMapList(
+        json['metadataHistory'],
+      ).map(WaferMetadataHistoryEntry.fromJson).toList(growable: false),
       statusHistory: _asMapList(
         json['statusHistory'],
       ).map(StatusHistoryEntry.fromJson).toList(growable: false),
@@ -363,6 +436,8 @@ class RecentActivity {
   final String? endedAt;
   final String? createdAt;
 
+  String get displayLocationName => _formatLocationLabel(locationName);
+
   factory RecentActivity.fromJson(Map<String, dynamic> json) {
     return RecentActivity(
       activityId: _asInt(json['activityId']) ?? 0,
@@ -407,6 +482,13 @@ class DashboardData {
       ).map(RecentActivity.fromJson).toList(growable: false),
     );
   }
+}
+
+String _formatLocationLabel(String value) {
+  return value.trim().replaceAllMapped(
+    RegExp(r'\bSAS\b'),
+    (_) => 'Sas',
+  );
 }
 
 String? _asString(Object? value) {

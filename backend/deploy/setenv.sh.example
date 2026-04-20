@@ -8,3 +8,13 @@ export WAFERDB_ALLOWED_ORIGIN="*"
 
 # Equivalent JVM-property form, if preferred:
 # export CATALINA_OPTS="${CATALINA_OPTS:-} -DWAFERDB_DB_PATH=/srv/waferdb/waferdb.sqlite -DWAFERDB_ALLOWED_ORIGIN=*"
+
+# Tomcat's default maxPostSize for application/x-www-form-urlencoded is 2 MB.
+# Photo uploads are base64-encoded in the POST body, so raise or remove this limit
+# by setting maxPostSize on the HTTP connector in conf/server.xml:
+#
+#   <Connector port="8080" ... maxPostSize="10485760" />   (10 MB)
+#   <Connector port="8080" ... maxPostSize="-1" />          (unlimited)
+#
+# Without this, photos larger than ~1.5 MB will cause all POST parameters to
+# be silently dropped, producing "Missing required parameter" errors.

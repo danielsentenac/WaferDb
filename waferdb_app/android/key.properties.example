@@ -1,0 +1,4 @@
+storePassword=replace-with-store-password
+keyPassword=replace-with-store-password
+keyAlias=waferdb
+storeFile=waferdb-release.jks

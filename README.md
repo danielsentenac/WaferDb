@@ -32,6 +32,7 @@ The backend also accepts runtime overrides through `WAFERDB_DB_PATH`, `WAFERDB_A
 The schema is normalized around a few core entities:
 
 - `wafers`: master data for each wafer (`name`, acquisition date, invoice reference, roughness, type, size in inches).
+- `wafer_metadata_history`: timestamped snapshots of wafer master-data updates, used when the initial record is completed or corrected later.
 - `wafer_status_history`: status changes over time, using controlled values such as `new_out_of_box`, `darkfield_background_todo`, and `darkfield_background_done`.
 - `wafer_activities`: exposure or usage events with purpose (`operation` or `r_and_d`), location, exposure duration, optional start/end timestamps, an optional observed status snapshot, and free-form observations.
 - `locations`: controlled location catalog for towers and clean-room areas, with parent/child hierarchy for CB sub-areas.
@@ -43,7 +44,7 @@ The schema is normalized around a few core entities:
 The initial seed data includes:
 
 - Towers: `NI`, `WI`, `NE`, `WE`, `PR`, `BS`, `SR`, `INJ`, `DET`
-- Clean rooms: `1500NW`, `CB`, `NE_CR`, `WE_CR`
+- Clean rooms: `1500N`, `1500W`, `CB`, `NE_CR`, `WE_CR`
 - CB sub-areas: `CB_SAS`, `CB_INJ_LAB`, `CB_DET_LAB`, `CB_MIRROR`, `CB_PAYLOAD`, `CB_BASE_ROOM`, `CB_MAIN_HALL`, `CB_DET_SAS`
 
 ## Quick start
@@ -107,6 +108,7 @@ mvn package
 - `GET /api/wafers?q=&status=&limit=`
 - `GET /api/wafers/{waferId}`
 - `POST /api/wafers`
+- `POST /api/wafers/{waferId}/history`
 - `POST /api/wafers/{waferId}/statuses`
 - `POST /api/wafers/{waferId}/activities`
 - `POST /api/wafers/{waferId}/darkfield-runs`
@@ -129,6 +131,7 @@ What the current client supports:
 - filter wafers by current status
 - inspect full wafer detail, status history, activities, and darkfield runs
 - register a new wafer
+- update wafer master data while preserving a history snapshot
 - append status history entries
 - append activity entries
 - append darkfield runs with per-bin summaries

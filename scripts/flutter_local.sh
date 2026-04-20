@@ -28,5 +28,18 @@ case "$1" in
         ;;
 esac
 
+if [[ "$#" -ge 2 && "$1" == "build" && "$2" == "apk" ]]; then
+    HAS_BUILD_NUMBER=0
+    for arg in "$@"; do
+        if [[ "$arg" == --build-number=* ]] || [[ "$arg" == "--build-number" ]]; then
+            HAS_BUILD_NUMBER=1
+            break
+        fi
+    done
+    if [[ "$HAS_BUILD_NUMBER" -eq 0 ]]; then
+        EXTRA_ARGS+=("--build-number=$(date +%s)")
+    fi
+fi
+
 cd "$ROOT_DIR/waferdb_app"
 exec "$FLUTTER_BIN" "$@" "${EXTRA_ARGS[@]}"

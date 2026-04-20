@@ -31,6 +31,33 @@ void main() {
     expect(dashboard.recentActivities.single.waferName, 'WAFER-001');
   });
 
+  test('location labels remove duplicated codes and normalize Sas', () {
+    const cleanRoom = LocationOption(
+      code: '1500N',
+      name: '1500N Clean Room',
+      locationTypeLabel: 'Clean room',
+      active: true,
+    );
+    const sas = LocationOption(
+      code: 'CB_SAS',
+      name: 'CB SAS',
+      locationTypeLabel: 'Clean room sub-area',
+      active: true,
+    );
+    const recent = RecentActivity(
+      activityId: 1,
+      waferName: 'WAFER-001',
+      purposeLabel: 'Operation',
+      locationName: 'CB DET SAS',
+      exposureQuantity: 12,
+      exposureUnit: 'hours',
+    );
+
+    expect(cleanRoom.displayLabel, '1500N Clean Room');
+    expect(sas.displayLabel, 'CB Sas');
+    expect(recent.displayLocationName, 'CB DET Sas');
+  });
+
   test('wafer detail parsing keeps nested darkfield bins', () {
     final detail = WaferDetail.fromJson({
       'wafer': {
@@ -39,6 +66,16 @@ void main() {
         'acquiredDate': '2026-04-15',
         'waferType': 'silicon',
       },
+      'metadataHistory': [
+        {
+          'waferMetadataHistoryId': 8,
+          'changedAt': '2026-04-16 09:30:00',
+          'name': 'WAFER-004',
+          'acquiredDate': '2026-04-15',
+          'waferType': 'silicon',
+          'changeSummary': 'Completed initial metadata.',
+        },
+      ],
       'statusHistory': const [],
       'activities': const [],
       'darkfieldRuns': [
@@ -60,6 +97,11 @@ void main() {
       ],
     });
 
+    expect(detail.metadataHistory.single.waferMetadataHistoryId, 8);
+    expect(
+      detail.metadataHistory.single.changeSummary,
+      'Completed initial metadata.',
+    );
     expect(detail.darkfieldRuns.single.darkfieldRunId, 12);
     expect(detail.darkfieldRuns.single.binSummaries.single.binOrder, 1);
     expect(detail.darkfieldRuns.single.binSummaries.single.particleCount, 18);

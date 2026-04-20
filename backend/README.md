@@ -26,6 +26,7 @@ The allowed CORS origin can also be overridden with:
 - `GET /api/wafers?q=&status=&limit=`
 - `GET /api/wafers/{waferId}`
 - `POST /api/wafers`
+- `POST /api/wafers/{waferId}/history`
 - `POST /api/wafers/{waferId}/statuses`
 - `POST /api/wafers/{waferId}/activities`
 - `POST /api/wafers/{waferId}/darkfield-runs`

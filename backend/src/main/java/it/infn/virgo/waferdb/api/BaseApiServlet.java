@@ -20,7 +20,7 @@ abstract class BaseApiServlet extends HttpServlet {
             response.setContentType("application/json");
             response.setHeader("Access-Control-Allow-Origin", config.allowedOrigin());
             response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-            response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+            response.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS,PUT");
 
             if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
                 response.setStatus(HttpServletResponse.SC_NO_CONTENT);

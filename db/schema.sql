@@ -10,10 +10,33 @@ CREATE TABLE IF NOT EXISTS wafers (
     roughness_nm REAL CHECK (roughness_nm IS NULL OR roughness_nm >= 0),
     wafer_type TEXT NOT NULL,
     wafer_size_in REAL CHECK (wafer_size_in IS NULL OR wafer_size_in > 0),
-    wafer_size_label TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS wafer_metadata_history (
+    wafer_metadata_history_id INTEGER PRIMARY KEY,
+    wafer_id INTEGER NOT NULL REFERENCES wafers(wafer_id) ON DELETE CASCADE,
+    changed_at TEXT NOT NULL CHECK (datetime(changed_at) IS NOT NULL),
+    name TEXT NOT NULL,
+    acquired_date TEXT NOT NULL CHECK (date(acquired_date) IS NOT NULL),
+    reference_invoice TEXT,
+    roughness_nm REAL CHECK (roughness_nm IS NULL OR roughness_nm >= 0),
+    wafer_type TEXT NOT NULL,
+    wafer_size_in REAL CHECK (wafer_size_in IS NULL OR wafer_size_in > 0),
+    notes TEXT,
+    change_summary TEXT,
+    photo_content_type TEXT CHECK (photo_content_type IS NULL OR photo_content_type LIKE 'image/%'),
+    photo_blob BLOB,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_wafer_metadata_history_wafer_changed_at
+    ON wafer_metadata_history (
+        wafer_id,
+        changed_at DESC,
+        wafer_metadata_history_id DESC
+    );
 
 CREATE TABLE IF NOT EXISTS usage_purposes (
     purpose_id INTEGER PRIMARY KEY,
@@ -35,7 +58,9 @@ CREATE TABLE IF NOT EXISTS wafer_statuses (
 INSERT OR IGNORE INTO wafer_statuses (status_id, code, label, description) VALUES
     (1, 'new_out_of_box', 'New out-of-the-box', 'Fresh wafer with no recorded exposure history.'),
     (2, 'darkfield_background_todo', 'Darkfield background to be done', 'Baseline darkfield background has not been recorded yet.'),
-    (3, 'darkfield_background_done', 'Darkfield background done', 'Baseline darkfield background is available.');
+    (3, 'darkfield_background_done', 'Darkfield background done', 'Baseline darkfield background is available.'),
+    (4, 'darkfield_exposed_done', 'Darkfield inspection done', 'Darkfield inspection has been completed.'),
+    (5, 'darkfield_inspection_todo', 'Darkfield inspection to be done', 'Darkfield inspection has not been recorded yet.');
 
 CREATE TABLE IF NOT EXISTS location_types (
     location_type_id INTEGER PRIMARY KEY,
@@ -46,7 +71,8 @@ CREATE TABLE IF NOT EXISTS location_types (
 INSERT OR IGNORE INTO location_types (location_type_id, code, label) VALUES
     (1, 'tower', 'Tower'),
     (2, 'clean_room', 'Clean room'),
-    (3, 'clean_room_subarea', 'Clean room sub-area');
+    (3, 'clean_room_subarea', 'Clean room sub-area'),
+    (4, 'hall', 'Hall');
 
 CREATE TABLE IF NOT EXISTS locations (
     location_id INTEGER PRIMARY KEY,
@@ -69,10 +95,13 @@ INSERT OR IGNORE INTO locations (code, name, location_type_id) VALUES
     ('SR', 'SR Tower', (SELECT location_type_id FROM location_types WHERE code = 'tower')),
     ('INJ', 'INJ Tower', (SELECT location_type_id FROM location_types WHERE code = 'tower')),
     ('DET', 'DET Tower', (SELECT location_type_id FROM location_types WHERE code = 'tower')),
-    ('1500NW', '1500N/W Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
+    ('1500N', '1500N Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
+    ('1500W', '1500W Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
     ('CB', 'CB Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
     ('NE_CR', 'NE Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
-    ('WE_CR', 'WE Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room'));
+    ('WE_CR', 'WE Clean Room', (SELECT location_type_id FROM location_types WHERE code = 'clean_room')),
+    ('NE_HALL', 'NE Hall', (SELECT location_type_id FROM location_types WHERE code = 'hall')),
+    ('WE_HALL', 'WE Hall', (SELECT location_type_id FROM location_types WHERE code = 'hall'));
 
 INSERT OR IGNORE INTO locations (code, name, location_type_id, parent_location_id) VALUES
     ('CB_SAS', 'CB SAS', (SELECT location_type_id FROM location_types WHERE code = 'clean_room_subarea'), (SELECT location_id FROM locations WHERE code = 'CB')),
@@ -91,6 +120,8 @@ CREATE TABLE IF NOT EXISTS wafer_status_history (
     effective_at TEXT NOT NULL CHECK (datetime(effective_at) IS NOT NULL),
     cleared_at TEXT CHECK (cleared_at IS NULL OR datetime(cleared_at) IS NOT NULL),
     notes TEXT,
+    photo_content_type TEXT CHECK (photo_content_type IS NULL OR photo_content_type LIKE 'image/%'),
+    photo_blob BLOB,
     CHECK (cleared_at IS NULL OR datetime(cleared_at) >= datetime(effective_at))
 );
 

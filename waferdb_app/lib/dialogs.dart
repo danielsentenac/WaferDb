@@ -1,7 +1,19 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'app_config.dart';
+import 'darkfield_import.dart';
 import 'models.dart';
+
+typedef DarkfieldSummaryImporter =
+    Future<DarkfieldImportedSummary> Function(
+      String requestedPath, {
+      String host,
+    });
 
 Future<Map<String, String>?> showCreateWaferDialog(
   BuildContext context,
@@ -23,6 +35,16 @@ Future<Map<String, String>?> showStatusDialog(
   );
 }
 
+Future<Map<String, String>?> showWaferHistoryDialog(
+  BuildContext context,
+  WaferDetail detail,
+) {
+  return showDialog<Map<String, String>>(
+    context: context,
+    builder: (context) => _WaferHistoryDialog(detail: detail),
+  );
+}
+
 Future<Map<String, String>?> showActivityDialog(
   BuildContext context,
   LookupBundle lookups,
@@ -33,18 +55,170 @@ Future<Map<String, String>?> showActivityDialog(
   );
 }
 
+Future<({Uint8List bytes, String contentType})?> showCapturePhotoDialog(
+  BuildContext context, {
+  required String title,
+}) {
+  return showDialog<({Uint8List bytes, String contentType})>(
+    context: context,
+    builder: (context) => _CapturePhotoDialog(title: title),
+  );
+}
+
+Future<Map<String, String>?> showCreateLocationDialog(
+  BuildContext context,
+  LookupBundle lookups,
+) {
+  return showDialog<Map<String, String>>(
+    context: context,
+    builder: (context) => _CreateLocationDialog(lookups: lookups),
+  );
+}
+
 Future<Map<String, String>?> showDarkfieldRunDialog(
   BuildContext context,
-  WaferDetail detail,
-  {required String darkfieldRoot}
-) {
+  WaferDetail detail, {
+  required String darkfieldRoot,
+  DarkfieldSummaryImporter importSummary = importDarkfieldSummary,
+}) {
   return showDialog<Map<String, String>>(
     context: context,
     builder: (context) => _DarkfieldRunDialog(
       detail: detail,
       darkfieldRoot: darkfieldRoot,
+      importSummary: importSummary,
     ),
   );
+}
+
+class _CapturePhotoDialog extends StatefulWidget {
+  const _CapturePhotoDialog({required this.title});
+
+  final String title;
+
+  @override
+  State<_CapturePhotoDialog> createState() => _CapturePhotoDialogState();
+}
+
+class _CapturePhotoDialogState extends State<_CapturePhotoDialog> {
+  Uint8List? _photoBytes;
+  String? _photoContentType;
+  bool _capturing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 540,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _capturing
+                      ? null
+                      : () => _acquire(_captureStatusPhoto),
+                  icon: _capturing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_camera_outlined),
+                  label: Text(
+                    _capturing
+                        ? 'Capturing…'
+                        : (_photoBytes == null
+                              ? 'Snapshot photo'
+                              : 'Retake photo'),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _capturing
+                      ? null
+                      : () => _acquire(_pickPhotoFromFile),
+                  icon: const Icon(Icons.folder_open_outlined),
+                  label: Text(
+                    _photoBytes == null ? 'From file' : 'Replace from file',
+                  ),
+                ),
+                if (_photoBytes != null)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() {
+                      _photoBytes = null;
+                      _photoContentType = null;
+                    }),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Remove'),
+                  ),
+              ],
+            ),
+            if (_photoBytes != null) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.memory(
+                  _photoBytes!,
+                  height: 240,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: (_photoBytes == null || _capturing)
+              ? null
+              : () => Navigator.of(context).pop((
+                  bytes: _photoBytes!,
+                  contentType: _photoContentType ?? 'image/jpeg',
+                )),
+          child: const Text('Attach photo'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _acquire(Future<_CapturedPhoto> Function() source) async {
+    setState(() => _capturing = true);
+    try {
+      final photo = await source();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _photoBytes = photo.bytes;
+        _photoContentType = photo.contentType;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final msg = error.toString().replaceFirst('Exception: ', '');
+      if (msg != 'No file selected.') {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _capturing = false);
+      }
+    }
+  }
 }
 
 class _CreateWaferDialog extends StatefulWidget {
@@ -64,7 +238,6 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
   late final TextEditingController _roughnessController;
   late final TextEditingController _typeController;
   late final TextEditingController _sizeInController;
-  late final TextEditingController _sizeLabelController;
   late final TextEditingController _notesController;
   String? _initialStatusCode;
 
@@ -77,7 +250,6 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
     _roughnessController = TextEditingController();
     _typeController = TextEditingController(text: 'silicon');
     _sizeInController = TextEditingController(text: '4');
-    _sizeLabelController = TextEditingController(text: '4-inch');
     _notesController = TextEditingController();
     _initialStatusCode = widget.lookups.statuses.isNotEmpty
         ? widget.lookups.statuses.first.code
@@ -92,7 +264,6 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
     _roughnessController.dispose();
     _typeController.dispose();
     _sizeInController.dispose();
-    _sizeLabelController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -137,15 +308,9 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
                   controller: _sizeInController,
                   label: 'Wafer size (inches)',
                 ),
-                _DialogTextField(
-                  controller: _sizeLabelController,
-                  label: 'Wafer size label',
-                ),
-                DropdownButtonFormField<String>(
+                _DialogDropdownField<String>(
                   initialValue: _initialStatusCode,
-                  decoration: const InputDecoration(
-                    labelText: 'Initial status',
-                  ),
+                  label: 'Initial status',
                   items: widget.lookups.statuses
                       .map(
                         (status) => DropdownMenuItem<String>(
@@ -190,7 +355,6 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
         'roughnessNm': _roughnessController.text.trim(),
         'waferType': _typeController.text.trim(),
         'waferSizeIn': _sizeInController.text.trim(),
-        'waferSizeLabel': _sizeLabelController.text.trim(),
         'initialStatusCode': _initialStatusCode ?? '',
         'notes': _notesController.text.trim(),
       }..removeWhere((_, value) => value.trim().isEmpty),
@@ -238,43 +402,45 @@ class _StatusDialogState extends State<_StatusDialog> {
     return AlertDialog(
       title: const Text('Append Status'),
       content: SizedBox(
-        width: 460,
+        width: 540,
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _statusCode,
-                decoration: const InputDecoration(labelText: 'Status'),
-                items: widget.lookups.statuses
-                    .map(
-                      (status) => DropdownMenuItem<String>(
-                        value: status.code,
-                        child: Text(status.label),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: (value) => setState(() => _statusCode = value),
-              ),
-              const SizedBox(height: 12),
-              _DialogTextField(
-                controller: _effectiveAtController,
-                label: 'Effective at',
-                hint: 'YYYY-MM-DD HH:MM:SS',
-                validator: _requiredField,
-              ),
-              _DialogTextField(
-                controller: _clearedAtController,
-                label: 'Cleared at',
-                hint: 'Optional',
-              ),
-              _DialogTextField(
-                controller: _notesController,
-                label: 'Notes',
-                maxLines: 3,
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _DialogDropdownField<String>(
+                  initialValue: _statusCode,
+                  label: 'Status',
+                  items: widget.lookups.statuses
+                      .map(
+                        (status) => DropdownMenuItem<String>(
+                          value: status.code,
+                          child: Text(status.label),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) => setState(() => _statusCode = value),
+                ),
+                const SizedBox(height: 12),
+                _DialogTextField(
+                  controller: _effectiveAtController,
+                  label: 'Effective at',
+                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _clearedAtController,
+                  label: 'Cleared at',
+                  hint: 'Optional',
+                ),
+                _DialogTextField(
+                  controller: _notesController,
+                  label: 'Notes',
+                  maxLines: 3,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -292,14 +458,265 @@ class _StatusDialogState extends State<_StatusDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    Navigator.of(context).pop(
-      {
-        'statusCode': _statusCode ?? '',
-        'effectiveAt': _effectiveAtController.text.trim(),
-        'clearedAt': _clearedAtController.text.trim(),
-        'notes': _notesController.text.trim(),
-      }..removeWhere((_, value) => value.trim().isEmpty),
+    final values = <String, String>{
+      'statusCode': _statusCode ?? '',
+      'effectiveAt': _effectiveAtController.text.trim(),
+      'clearedAt': _clearedAtController.text.trim(),
+      'notes': _notesController.text.trim(),
+    };
+    Navigator.of(
+      context,
+    ).pop(values..removeWhere((_, value) => value.trim().isEmpty));
+  }
+}
+
+class _WaferHistoryDialog extends StatefulWidget {
+  const _WaferHistoryDialog({required this.detail});
+
+  final WaferDetail detail;
+
+  @override
+  State<_WaferHistoryDialog> createState() => _WaferHistoryDialogState();
+}
+
+class _WaferHistoryDialogState extends State<_WaferHistoryDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _changedAtController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _acquiredDateController;
+  late final TextEditingController _invoiceController;
+  late final TextEditingController _roughnessController;
+  late final TextEditingController _typeController;
+  late final TextEditingController _sizeInController;
+  late final TextEditingController _notesController;
+  late final TextEditingController _changeSummaryController;
+  Uint8List? _photoBytes;
+  String? _photoContentType;
+  bool _acquiringPhoto = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final wafer = widget.detail.wafer;
+    _changedAtController = TextEditingController(text: _nowTimestamp());
+    _nameController = TextEditingController(text: wafer.name);
+    _acquiredDateController = TextEditingController(text: wafer.acquiredDate);
+    _invoiceController = TextEditingController(
+      text: wafer.referenceInvoice ?? '',
     );
+    _roughnessController = TextEditingController(
+      text: _nullableNumber(wafer.roughnessNm),
+    );
+    _typeController = TextEditingController(text: wafer.waferType);
+    _sizeInController = TextEditingController(
+      text: _nullableNumber(wafer.waferSizeIn),
+    );
+    _notesController = TextEditingController(text: wafer.notes ?? '');
+    _changeSummaryController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _changedAtController.dispose();
+    _nameController.dispose();
+    _acquiredDateController.dispose();
+    _invoiceController.dispose();
+    _roughnessController.dispose();
+    _typeController.dispose();
+    _sizeInController.dispose();
+    _notesController.dispose();
+    _changeSummaryController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Add history for ${widget.detail.wafer.name}'),
+      content: SizedBox(
+        width: 560,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _DialogTextField(
+                  controller: _changedAtController,
+                  label: 'Changed at',
+                  hint: 'YYYY-MM-DD HH:MM:SS',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _nameController,
+                  label: 'Wafer name',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _acquiredDateController,
+                  label: 'Acquired date',
+                  hint: 'YYYY-MM-DD',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _invoiceController,
+                  label: 'Invoice reference',
+                ),
+                _DialogTextField(
+                  controller: _roughnessController,
+                  label: 'Roughness (nm)',
+                ),
+                _DialogTextField(
+                  controller: _typeController,
+                  label: 'Wafer type',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _sizeInController,
+                  label: 'Wafer size (inches)',
+                ),
+                _DialogTextField(
+                  controller: _notesController,
+                  label: 'Notes',
+                  maxLines: 3,
+                ),
+                _DialogTextField(
+                  controller: _changeSummaryController,
+                  label: 'History note',
+                  hint: 'What changed in this update?',
+                  maxLines: 3,
+                ),
+                _DialogFieldShell(
+                  label: 'Box/Identity photo',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _acquiringPhoto
+                                ? null
+                                : () => _acquirePhoto(_captureStatusPhoto),
+                            icon: _acquiringPhoto
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.photo_camera_outlined),
+                            label: Text(
+                              _acquiringPhoto
+                                  ? 'Capturing…'
+                                  : (_photoBytes == null
+                                        ? 'Snapshot photo'
+                                        : 'Retake photo'),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _acquiringPhoto
+                                ? null
+                                : () => _acquirePhoto(_pickPhotoFromFile),
+                            icon: const Icon(Icons.folder_open_outlined),
+                            label: Text(
+                              _photoBytes == null
+                                  ? 'From file'
+                                  : 'Replace from file',
+                            ),
+                          ),
+                          if (_photoBytes != null)
+                            OutlinedButton.icon(
+                              onPressed: () => setState(() {
+                                _photoBytes = null;
+                                _photoContentType = null;
+                              }),
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Remove photo'),
+                            ),
+                        ],
+                      ),
+                      if (_photoBytes != null) ...[
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.memory(
+                            _photoBytes!,
+                            height: 220,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _acquiringPhoto ? null : _submit,
+          icon: const Icon(Icons.history_toggle_off),
+          label: const Text('Add history'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _acquirePhoto(Future<_CapturedPhoto> Function() source) async {
+    setState(() => _acquiringPhoto = true);
+    try {
+      final photo = await source();
+      if (!mounted) return;
+      setState(() {
+        _photoBytes = photo.bytes;
+        _photoContentType = photo.contentType;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final msg = error.toString().replaceFirst('Exception: ', '');
+      if (msg != 'No file selected.') {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } finally {
+      if (mounted) setState(() => _acquiringPhoto = false);
+    }
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    final values = <String, String>{
+      'changedAt': _changedAtController.text.trim(),
+      'name': _nameController.text.trim(),
+      'acquiredDate': _acquiredDateController.text.trim(),
+      'referenceInvoice': _invoiceController.text.trim(),
+      'roughnessNm': _roughnessController.text.trim(),
+      'waferType': _typeController.text.trim(),
+      'waferSizeIn': _sizeInController.text.trim(),
+      'notes': _notesController.text.trim(),
+      'changeSummary': _changeSummaryController.text.trim(),
+    };
+    if (_photoBytes != null) {
+      values['photoBase64'] = base64Encode(_photoBytes!);
+      values['photoContentType'] = _photoContentType ?? 'image/jpeg';
+    }
+    Navigator.of(
+      context,
+    ).pop(values..removeWhere((_, value) => value.trim().isEmpty));
   }
 }
 
@@ -365,9 +782,9 @@ class _ActivityDialogState extends State<_ActivityDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String>(
+                _DialogDropdownField<String>(
                   initialValue: _purposeCode,
-                  decoration: const InputDecoration(labelText: 'Purpose'),
+                  label: 'Purpose',
                   items: widget.lookups.purposes
                       .map(
                         (purpose) => DropdownMenuItem<String>(
@@ -379,9 +796,9 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                   onChanged: (value) => setState(() => _purposeCode = value),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
+                _DialogDropdownField<String>(
                   initialValue: _locationCode,
-                  decoration: const InputDecoration(labelText: 'Location'),
+                  label: 'Location',
                   items: activeLocations
                       .map(
                         (location) => DropdownMenuItem<String>(
@@ -393,11 +810,9 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                   onChanged: (value) => setState(() => _locationCode = value),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
+                _DialogDropdownField<String>(
                   initialValue: _observedStatusCode,
-                  decoration: const InputDecoration(
-                    labelText: 'Observed status',
-                  ),
+                  label: 'Observed status',
                   items: [
                     const DropdownMenuItem<String>(
                       value: null,
@@ -427,9 +842,9 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 2,
-                      child: DropdownButtonFormField<String>(
+                      child: _DialogDropdownField<String>(
                         initialValue: _exposureUnit,
-                        decoration: const InputDecoration(labelText: 'Unit'),
+                        label: 'Unit',
                         items: const [
                           DropdownMenuItem(
                             value: 'hours',
@@ -503,14 +918,139 @@ class _ActivityDialogState extends State<_ActivityDialog> {
   }
 }
 
+class _CreateLocationDialog extends StatefulWidget {
+  const _CreateLocationDialog({required this.lookups});
+
+  final LookupBundle lookups;
+
+  @override
+  State<_CreateLocationDialog> createState() => _CreateLocationDialogState();
+}
+
+class _CreateLocationDialogState extends State<_CreateLocationDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _codeController;
+  late final TextEditingController _nameController;
+  String? _locationTypeCode;
+  String? _parentLocationCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController = TextEditingController();
+    _nameController = TextEditingController();
+    _locationTypeCode = widget.lookups.locationTypes.isNotEmpty
+        ? widget.lookups.locationTypes.first.code
+        : null;
+  }
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add location'),
+      content: SizedBox(
+        width: 480,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _DialogTextField(
+                  controller: _codeController,
+                  label: 'Code',
+                  hint: 'e.g. NE_HALL (will be uppercased)',
+                  validator: _requiredField,
+                ),
+                _DialogTextField(
+                  controller: _nameController,
+                  label: 'Name',
+                  hint: 'e.g. NE Hall',
+                  validator: _requiredField,
+                ),
+                _DialogDropdownField<String>(
+                  initialValue: _locationTypeCode,
+                  label: 'Location type',
+                  items: widget.lookups.locationTypes
+                      .map(
+                        (t) => DropdownMenuItem<String>(
+                          value: t.code,
+                          child: Text(t.label),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) =>
+                      setState(() => _locationTypeCode = value),
+                ),
+                const SizedBox(height: 12),
+                _DialogDropdownField<String?>(
+                  initialValue: _parentLocationCode,
+                  label: 'Parent location (optional)',
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('No parent'),
+                    ),
+                    ...widget.lookups.locations
+                        .where((l) => l.active)
+                        .map(
+                          (l) => DropdownMenuItem<String?>(
+                            value: l.code,
+                            child: Text('${l.code} — ${l.displayLabel}'),
+                          ),
+                        ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _parentLocationCode = value),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Create')),
+      ],
+    );
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    final values = <String, String>{
+      'code': _codeController.text.trim().toUpperCase(),
+      'name': _nameController.text.trim(),
+      'locationTypeCode': _locationTypeCode ?? '',
+    };
+    if (_parentLocationCode != null) {
+      values['parentLocationCode'] = _parentLocationCode!;
+    }
+    Navigator.of(context).pop(values);
+  }
+}
+
 class _DarkfieldRunDialog extends StatefulWidget {
   const _DarkfieldRunDialog({
     required this.detail,
     required this.darkfieldRoot,
+    required this.importSummary,
   });
 
   final WaferDetail detail;
   final String darkfieldRoot;
+  final DarkfieldSummaryImporter importSummary;
 
   @override
   State<_DarkfieldRunDialog> createState() => _DarkfieldRunDialogState();
@@ -521,9 +1061,10 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
   late final TextEditingController _measuredAtController;
   late final TextEditingController _dataPathController;
   late final TextEditingController _summaryNotesController;
-  late final List<_DarkfieldBinDraft> _bins;
+  final List<_DarkfieldBinDraft> _bins = <_DarkfieldBinDraft>[];
   String _runType = 'background';
   int? _activityId;
+  bool _isImporting = false;
 
   @override
   void initState() {
@@ -536,7 +1077,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
       text: '$normalizedRoot/${widget.detail.wafer.name}/${_todayDate()}',
     );
     _summaryNotesController = TextEditingController();
-    _bins = [_DarkfieldBinDraft()];
+    _bins.add(_DarkfieldBinDraft());
   }
 
   @override
@@ -566,11 +1107,9 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                 Row(
                   children: [
                     Expanded(
-                      child: DropdownButtonFormField<String>(
+                      child: _DialogDropdownField<String>(
                         initialValue: _runType,
-                        decoration: const InputDecoration(
-                          labelText: 'Run type',
-                        ),
+                        label: 'Run type',
                         items: const [
                           DropdownMenuItem(
                             value: 'background',
@@ -591,11 +1130,9 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 2,
-                      child: DropdownButtonFormField<int?>(
+                      child: _DialogDropdownField<int?>(
                         initialValue: _activityId,
-                        decoration: const InputDecoration(
-                          labelText: 'Linked activity',
-                        ),
+                        label: 'Linked activity',
                         items: [
                           const DropdownMenuItem<int?>(
                             value: null,
@@ -633,17 +1170,43 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                   maxLines: 3,
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Bin summaries',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const Spacer(),
-                    OutlinedButton.icon(
-                      onPressed: _addBin,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add bin'),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _isImporting ? null : _importResults,
+                            icon: _isImporting
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.file_download_outlined),
+                            label: Text(
+                              _isImporting ? 'Importing...' : 'Import results',
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isImporting ? null : _addBin,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add bin'),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -663,7 +1226,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: _submit,
+          onPressed: _isImporting ? null : _submit,
           icon: const Icon(Icons.biotech),
           label: const Text('Save run'),
         ),
@@ -673,6 +1236,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
 
   Widget _buildBinEditor(int index, _DarkfieldBinDraft bin) {
     return Container(
+      key: ValueKey(bin.draftId),
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -702,7 +1266,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
             runSpacing: 0,
             children: [
               SizedBox(
-                width: 180,
+                width: 220,
                 child: _DialogTextField(
                   controller: bin.labelController,
                   label: 'Label',
@@ -710,21 +1274,7 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                 ),
               ),
               SizedBox(
-                width: 130,
-                child: _DialogTextField(
-                  controller: bin.minSizeController,
-                  label: 'Min size (um)',
-                ),
-              ),
-              SizedBox(
-                width: 130,
-                child: _DialogTextField(
-                  controller: bin.maxSizeController,
-                  label: 'Max size (um)',
-                ),
-              ),
-              SizedBox(
-                width: 150,
+                width: 180,
                 child: _DialogTextField(
                   controller: bin.particleCountController,
                   label: 'Particle count',
@@ -732,17 +1282,10 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                 ),
               ),
               SizedBox(
-                width: 150,
+                width: 190,
                 child: _DialogTextField(
                   controller: bin.totalAreaController,
                   label: 'Total area (um2)',
-                ),
-              ),
-              SizedBox(
-                width: 170,
-                child: _DialogTextField(
-                  controller: bin.particleDensityController,
-                  label: 'Density (cm2)',
                 ),
               ),
             ],
@@ -761,6 +1304,53 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
     setState(() {
       _bins.add(_DarkfieldBinDraft());
     });
+  }
+
+  Future<void> _importResults() async {
+    final requestedPath = _dataPathController.text.trim();
+    if (requestedPath.isEmpty) {
+      _showDialogMessage('Enter a data path before importing results.');
+      return;
+    }
+
+    setState(() => _isImporting = true);
+    try {
+      final imported = await widget.importSummary(
+        requestedPath,
+        host: defaultDarkfieldImportHost,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _replaceBins(imported.bins);
+        _dataPathController.text = imported.resolvedDirectoryPath;
+        if (imported.inferredRunType != null) {
+          _runType = imported.inferredRunType!;
+        }
+        if (_summaryNotesController.text.trim().isEmpty) {
+          _summaryNotesController.text = imported.buildSummaryNotes(
+            defaultDarkfieldImportHost,
+          );
+        }
+      });
+      _showDialogMessage(
+        'Imported ${imported.bins.length} bin summaries from ${imported.summaryFilePath}.',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = error is ProcessException
+          ? (error.message.isEmpty ? error.toString() : error.message)
+          : error.toString().replaceFirst('Exception: ', '');
+      _showDialogMessage(message);
+    } finally {
+      if (mounted) {
+        setState(() => _isImporting = false);
+      }
+    }
   }
 
   void _removeBin(int index) {
@@ -794,50 +1384,88 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
           ? '0'
           : bin.particleCountController.text.trim();
       _putIfNotBlank(values, '${prefix}label', bin.labelController.text);
-      _putIfNotBlank(values, '${prefix}minSizeUm', bin.minSizeController.text);
-      _putIfNotBlank(values, '${prefix}maxSizeUm', bin.maxSizeController.text);
       _putIfNotBlank(
         values,
         '${prefix}totalAreaUm2',
         bin.totalAreaController.text,
       );
-      _putIfNotBlank(
+      _putIfNotBlank(values, '${prefix}notes', bin.notesController.text);
+      _putIfNotNullDouble(values, '${prefix}minSizeUm', bin.minSizeUm);
+      _putIfNotNullDouble(values, '${prefix}maxSizeUm', bin.maxSizeUm);
+      _putIfNotNullDouble(
         values,
         '${prefix}particleDensityCm2',
-        bin.particleDensityController.text,
+        bin.particleDensityCm2,
       );
-      _putIfNotBlank(values, '${prefix}notes', bin.notesController.text);
     }
 
     Navigator.of(context).pop(values);
+  }
+
+  void _replaceBins(List<DarkfieldImportedBin> importedBins) {
+    for (final bin in _bins) {
+      bin.dispose();
+    }
+    _bins
+      ..clear()
+      ..addAll(
+        importedBins.isEmpty
+            ? [_DarkfieldBinDraft()]
+            : importedBins.map(_DarkfieldBinDraft.fromImported),
+      );
+  }
+
+  void _showDialogMessage(String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) {
+      return;
+    }
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
 class _DarkfieldBinDraft {
   _DarkfieldBinDraft()
-    : labelController = TextEditingController(),
-      minSizeController = TextEditingController(),
-      maxSizeController = TextEditingController(),
+    : draftId = _nextDraftId++,
+      minSizeUm = null,
+      maxSizeUm = null,
+      particleDensityCm2 = null,
+      labelController = TextEditingController(),
       particleCountController = TextEditingController(text: '0'),
       totalAreaController = TextEditingController(),
-      particleDensityController = TextEditingController(),
       notesController = TextEditingController();
 
+  _DarkfieldBinDraft.fromImported(DarkfieldImportedBin imported)
+    : draftId = _nextDraftId++,
+      minSizeUm = imported.minSizeUm,
+      maxSizeUm = imported.maxSizeUm,
+      particleDensityCm2 = imported.particleDensityCm2,
+      labelController = TextEditingController(text: imported.label),
+      particleCountController = TextEditingController(
+        text: imported.particleCount.toString(),
+      ),
+      totalAreaController = TextEditingController(
+        text: imported.totalAreaUm2 != null
+            ? _formatAreaUm2(imported.totalAreaUm2!)
+            : '',
+      ),
+      notesController = TextEditingController(text: imported.notes ?? '');
+
+  static int _nextDraftId = 0;
+
+  final int draftId;
+  final double? minSizeUm;
+  final double? maxSizeUm;
+  final double? particleDensityCm2;
   final TextEditingController labelController;
-  final TextEditingController minSizeController;
-  final TextEditingController maxSizeController;
   final TextEditingController particleCountController;
   final TextEditingController totalAreaController;
-  final TextEditingController particleDensityController;
   final TextEditingController notesController;
 
   void dispose() {
     labelController.dispose();
-    minSizeController.dispose();
-    maxSizeController.dispose();
     particleCountController.dispose();
     totalAreaController.dispose();
-    particleDensityController.dispose();
     notesController.dispose();
   }
 }
@@ -859,16 +1487,80 @@ class _DialogTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+    return _DialogFieldShell(
+      label: label,
       child: TextFormField(
         controller: controller,
         maxLines: maxLines,
         validator: validator,
-        decoration: InputDecoration(labelText: label, hintText: hint),
+        textAlignVertical: maxLines > 1 ? TextAlignVertical.top : null,
+        decoration: _dialogInputDecoration(hint: hint),
       ),
     );
   }
+}
+
+class _DialogDropdownField<T> extends StatelessWidget {
+  const _DialogDropdownField({
+    required this.label,
+    required this.items,
+    required this.onChanged,
+    this.initialValue,
+  });
+
+  final String label;
+  final T? initialValue;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DialogFieldShell(
+      label: label,
+      child: DropdownButtonFormField<T>(
+        initialValue: initialValue,
+        isDense: false,
+        isExpanded: true,
+        decoration: _dialogInputDecoration(),
+        items: items,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+class _DialogFieldShell extends StatelessWidget {
+  const _DialogFieldShell({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.72),
+      fontWeight: FontWeight.w600,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: labelStyle),
+          const SizedBox(height: 6),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+InputDecoration _dialogInputDecoration({String? hint}) {
+  return InputDecoration(
+    hintText: hint,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+  );
 }
 
 String? _requiredField(String? value) {
@@ -882,6 +1574,16 @@ void _putIfNotBlank(Map<String, String> target, String key, String value) {
   final trimmed = value.trim();
   if (trimmed.isNotEmpty) {
     target[key] = trimmed;
+  }
+}
+
+void _putIfNotNullDouble(
+  Map<String, String> target,
+  String key,
+  double? value,
+) {
+  if (value != null) {
+    target[key] = value.toString();
   }
 }
 
@@ -907,4 +1609,156 @@ String _nowTimestamp() {
       '${now.hour.toString().padLeft(2, '0')}:'
       '${now.minute.toString().padLeft(2, '0')}:'
       '${now.second.toString().padLeft(2, '0')}';
+}
+
+String _nullableNumber(double? value) {
+  if (value == null) {
+    return '';
+  }
+  return value.toString();
+}
+
+String _formatAreaUm2(double value) {
+  if (value == value.truncateToDouble()) {
+    return value.toStringAsFixed(0);
+  }
+  return value.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+}
+
+class _CapturedPhoto {
+  const _CapturedPhoto({required this.bytes, required this.contentType});
+
+  final Uint8List bytes;
+  final String contentType;
+}
+
+// Raw bytes must stay under this so that base64+URL-encoding fits in the
+// server's 2 MB application/x-www-form-urlencoded limit.
+const _maxPhotoBytes = 1400000; // ~1.4 MB → ~1.87 MB base64
+
+void _assertPhotoSize(Uint8List bytes) {
+  if (bytes.length > _maxPhotoBytes) {
+    final kb = (bytes.length / 1024).round();
+    throw Exception(
+      'Photo is too large ($kb KB). '
+      'Please use a lower-resolution or higher-compression image (limit ~1.4 MB).',
+    );
+  }
+}
+
+Future<_CapturedPhoto> _captureStatusPhoto() async {
+  if (Platform.isAndroid) {
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (picked == null) {
+      throw Exception('No photo taken.');
+    }
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('Camera capture produced an empty image.');
+    }
+    _assertPhotoSize(bytes);
+    final contentType = picked.name.toLowerCase().endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+    return _CapturedPhoto(bytes: bytes, contentType: contentType);
+  }
+
+  // Linux desktop: use ffmpeg + V4L2
+  final tempPath =
+      '${Directory.systemTemp.path}/waferdb_snap_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  final result = await Process.run('ffmpeg', [
+    '-y',
+    '-i',
+    defaultStatusPhotoCameraDevice,
+    '-frames:v',
+    '1',
+    '-q:v',
+    '2',
+    tempPath,
+  ]);
+
+  final file = File(tempPath);
+  if (!file.existsSync()) {
+    final relevantLines = result.stderr.toString().split('\n').where((l) {
+      final t = l.trim();
+      if (t.isEmpty) return false;
+      if (t.startsWith('ffmpeg version')) return false;
+      if (t.startsWith('built with')) return false;
+      if (t.startsWith('configuration:')) return false;
+      if (RegExp(r'^lib\w').hasMatch(t)) return false;
+      return true;
+    }).toList();
+    final relevantError = relevantLines.join(' | ');
+    throw Exception(
+      'Camera capture failed ($defaultStatusPhotoCameraDevice): '
+      '${relevantError.isEmpty ? 'exit ${result.exitCode}' : relevantError}',
+    );
+  }
+  try {
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('Camera capture produced an empty image.');
+    }
+    _assertPhotoSize(bytes);
+    return _CapturedPhoto(bytes: bytes, contentType: 'image/jpeg');
+  } finally {
+    file.delete().ignore();
+  }
+}
+
+Future<_CapturedPhoto> _pickPhotoFromFile() async {
+  if (Platform.isAndroid) {
+    final picker = ImagePicker();
+    final XFile? picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (picked == null) {
+      throw Exception('No file selected.');
+    }
+    final bytes = await picked.readAsBytes();
+    if (bytes.isEmpty) {
+      throw Exception('Selected file is empty.');
+    }
+    _assertPhotoSize(bytes);
+    final contentType = picked.name.toLowerCase().endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+    return _CapturedPhoto(bytes: bytes, contentType: contentType);
+  }
+
+  // Linux desktop: use zenity file picker
+  final result = await Process.run('zenity', [
+    '--file-selection',
+    '--title=Select box/identity photo',
+    '--file-filter=Images (JPEG/PNG) | *.jpg *.jpeg *.png *.JPG *.JPEG *.PNG',
+  ]);
+  if (result.exitCode != 0) {
+    throw Exception('No file selected.');
+  }
+  final path = result.stdout.toString().trim();
+  if (path.isEmpty) {
+    throw Exception('No file selected.');
+  }
+  final file = File(path);
+  if (!await file.exists()) {
+    throw Exception('File not found: $path');
+  }
+  final bytes = await file.readAsBytes();
+  if (bytes.isEmpty) {
+    throw Exception('Selected file is empty.');
+  }
+  _assertPhotoSize(bytes);
+  final contentType = path.toLowerCase().endsWith('.png')
+      ? 'image/png'
+      : 'image/jpeg';
+  return _CapturedPhoto(bytes: bytes, contentType: contentType);
 }

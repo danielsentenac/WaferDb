@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'models.dart';
 
@@ -22,6 +23,11 @@ class ApiClient {
 
   Future<LookupBundle> fetchLookups() async {
     final payload = await _request('GET', 'lookups');
+    return LookupBundle.fromJson(payload);
+  }
+
+  Future<LookupBundle> createLocation(Map<String, String> values) async {
+    final payload = await _request('POST', 'lookups', formFields: values);
     return LookupBundle.fromJson(payload);
   }
 
@@ -74,6 +80,47 @@ class ApiClient {
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 
+  Future<Uint8List> fetchStatusPhoto(int waferId, int statusHistoryId) async {
+    final uri = _baseUri.resolve('wafers/$waferId/statuses/$statusHistoryId/photo');
+    final request = await _httpClient.getUrl(uri);
+    request.headers.set(HttpHeaders.acceptHeader, '*/*');
+    final response = await request.close();
+    final bytes = await response.fold<List<int>>(
+      <int>[],
+      (buffer, chunk) => buffer..addAll(chunk),
+    );
+
+    if (response.statusCode >= 400) {
+      final body = utf8.decode(bytes, allowMalformed: true);
+      String message = 'Request failed.';
+      if (body.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(body);
+          if (decoded is Map<String, dynamic>) {
+            message = decoded['error']?.toString() ?? message;
+          }
+        } catch (_) {
+          message = body;
+        }
+      }
+      throw ApiException(message, statusCode: response.statusCode);
+    }
+
+    return Uint8List.fromList(bytes);
+  }
+
+  Future<WaferDetail> addWaferHistory(
+    int waferId,
+    Map<String, String> values,
+  ) async {
+    final payload = await _request(
+      'POST',
+      'wafers/$waferId/history',
+      formFields: values,
+    );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
   Future<WaferDetail> addActivity(
     int waferId,
     Map<String, String> values,
@@ -83,6 +130,85 @@ class ApiClient {
       'wafers/$waferId/activities',
       formFields: values,
     );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<WaferDetail> uploadStatusPhoto(
+    int waferId,
+    int statusHistoryId,
+    Uint8List bytes,
+    String contentType,
+  ) async {
+    final payload = await _request(
+      'POST',
+      'wafers/$waferId/statuses/$statusHistoryId/photo',
+      formFields: {
+        'photoBase64': base64Encode(bytes),
+        'photoContentType': contentType,
+      },
+    );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<Uint8List> fetchHistoryPhoto(int waferId, int historyId) async {
+    final uri = _baseUri.resolve('wafers/$waferId/history/$historyId/photo');
+    final request = await _httpClient.getUrl(uri);
+    request.headers.set(HttpHeaders.acceptHeader, '*/*');
+    final response = await request.close();
+    final bytes = await response.fold<List<int>>(
+      <int>[],
+      (buffer, chunk) => buffer..addAll(chunk),
+    );
+    if (response.statusCode >= 400) {
+      final body = utf8.decode(bytes, allowMalformed: true);
+      String message = 'Request failed.';
+      try {
+        final decoded = jsonDecode(body);
+        if (decoded is Map<String, dynamic>) {
+          message = decoded['error']?.toString() ?? message;
+        }
+      } catch (_) {
+        message = body;
+      }
+      throw ApiException(message, statusCode: response.statusCode);
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  Future<WaferDetail> uploadHistoryPhoto(
+    int waferId,
+    int historyId,
+    Uint8List bytes,
+    String contentType,
+  ) async {
+    final payload = await _request(
+      'POST',
+      'wafers/$waferId/history/$historyId/photo',
+      formFields: {
+        'photoBase64': base64Encode(bytes),
+        'photoContentType': contentType,
+      },
+    );
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<WaferDetail> deleteMetadataHistory(int waferId, int historyId) async {
+    final payload = await _request('DELETE', 'wafers/$waferId/history/$historyId');
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<WaferDetail> deleteStatus(int waferId, int statusHistoryId) async {
+    final payload = await _request('DELETE', 'wafers/$waferId/statuses/$statusHistoryId');
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<WaferDetail> deleteActivity(int waferId, int activityId) async {
+    final payload = await _request('DELETE', 'wafers/$waferId/activities/$activityId');
+    return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
+  }
+
+  Future<WaferDetail> deleteDarkfieldRun(int waferId, int runId) async {
+    final payload = await _request('DELETE', 'wafers/$waferId/darkfield-runs/$runId');
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 

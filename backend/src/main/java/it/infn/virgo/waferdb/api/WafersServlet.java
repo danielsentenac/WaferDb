@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,24 @@ public final class WafersServlet extends BaseApiServlet {
                     return;
                 }
                 sendOk(response, detail);
+                return;
+            }
+
+            if (segments.size() == 4
+                && "statuses".equals(segments.get(1))
+                && "photo".equals(segments.get(3))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long statusHistoryId = RequestUtil.requiredLongPathSegment(segments.get(2), "status history id");
+                sendStatusPhoto(response, connection, waferId, statusHistoryId);
+                return;
+            }
+
+            if (segments.size() == 4
+                && "history".equals(segments.get(1))
+                && "photo".equals(segments.get(3))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long historyId = RequestUtil.requiredLongPathSegment(segments.get(2), "history id");
+                sendHistoryPhoto(response, connection, waferId, historyId);
                 return;
             }
 
@@ -57,6 +76,12 @@ public final class WafersServlet extends BaseApiServlet {
                 return;
             }
 
+            if (segments.size() == 2 && "history".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                sendCreated(response, createMetadataHistory(connection, waferId, request));
+                return;
+            }
+
             if (segments.size() == 2 && "activities".equals(segments.get(1))) {
                 long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
                 sendCreated(response, createActivity(connection, waferId, request));
@@ -66,6 +91,24 @@ public final class WafersServlet extends BaseApiServlet {
             if (segments.size() == 2 && "darkfield-runs".equals(segments.get(1))) {
                 long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
                 sendCreated(response, createDarkfieldRun(connection, waferId, request));
+                return;
+            }
+
+            if (segments.size() == 4
+                && "statuses".equals(segments.get(1))
+                && "photo".equals(segments.get(3))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long statusHistoryId = RequestUtil.requiredLongPathSegment(segments.get(2), "status history id");
+                sendOk(response, attachStatusPhoto(connection, waferId, statusHistoryId, request));
+                return;
+            }
+
+            if (segments.size() == 4
+                && "history".equals(segments.get(1))
+                && "photo".equals(segments.get(3))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long historyId = RequestUtil.requiredLongPathSegment(segments.get(2), "history id");
+                sendOk(response, attachHistoryPhoto(connection, waferId, historyId, request));
                 return;
             }
 
@@ -80,6 +123,74 @@ public final class WafersServlet extends BaseApiServlet {
         }
     }
 
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        try (Connection connection = openConnection()) {
+            List<String> segments = RequestUtil.pathSegments(request);
+
+            if (segments.size() == 3 && "history".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long historyId = RequestUtil.requiredLongPathSegment(segments.get(2), "history id");
+                sendOk(response, deleteRow(connection, waferId,
+                    "DELETE FROM wafer_metadata_history WHERE wafer_id = ? AND wafer_metadata_history_id = ?",
+                    historyId));
+                return;
+            }
+
+            if (segments.size() == 3 && "statuses".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long statusHistoryId = RequestUtil.requiredLongPathSegment(segments.get(2), "status history id");
+                sendOk(response, deleteRow(connection, waferId,
+                    "DELETE FROM wafer_status_history WHERE wafer_id = ? AND wafer_status_history_id = ?",
+                    statusHistoryId));
+                return;
+            }
+
+            if (segments.size() == 3 && "activities".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long activityId = RequestUtil.requiredLongPathSegment(segments.get(2), "activity id");
+                sendOk(response, deleteRow(connection, waferId,
+                    "DELETE FROM wafer_activities WHERE wafer_id = ? AND activity_id = ?",
+                    activityId));
+                return;
+            }
+
+            if (segments.size() == 3 && "darkfield-runs".equals(segments.get(1))) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                long runId = RequestUtil.requiredLongPathSegment(segments.get(2), "darkfield run id");
+                sendOk(response, deleteRow(connection, waferId,
+                    "DELETE FROM darkfield_runs WHERE wafer_id = ? AND darkfield_run_id = ?",
+                    runId));
+                return;
+            }
+
+            sendError(response, HttpServletResponse.SC_NOT_FOUND, "Unsupported wafer API path.");
+        } catch (IllegalArgumentException exception) {
+            sendError(response, HttpServletResponse.SC_BAD_REQUEST, exception.getMessage());
+        } catch (SQLException exception) {
+            sendError(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, exception.getMessage());
+        }
+    }
+
+    private Map<String, Object> deleteRow(
+        Connection connection,
+        long waferId,
+        String sql,
+        long rowId
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, waferId);
+            statement.setLong(2, rowId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("Record not found.");
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
+    }
+
     private Map<String, Object> queryWaferList(Connection connection, HttpServletRequest request) throws SQLException {
         String query = RequestUtil.optional(request, "q");
         String statusCode = RequestUtil.optional(request, "status");
@@ -87,7 +198,7 @@ public final class WafersServlet extends BaseApiServlet {
 
         StringBuilder sql = new StringBuilder()
             .append("SELECT w.wafer_id, w.name, w.acquired_date, w.reference_invoice, w.roughness_nm, ")
-            .append("w.wafer_type, w.wafer_size_in, w.wafer_size_label, w.notes, w.created_at, ")
+            .append("w.wafer_type, w.wafer_size_in, w.notes, w.created_at, ")
             .append("cs.status_code, cs.status_label, cs.effective_at AS status_effective_at ")
             .append("FROM wafers w ")
             .append("LEFT JOIN wafer_current_status cs ON cs.wafer_id = w.wafer_id ");
@@ -132,7 +243,7 @@ public final class WafersServlet extends BaseApiServlet {
         Map<String, Object> wafer = null;
         String waferSql = ""
             + "SELECT w.wafer_id, w.name, w.acquired_date, w.reference_invoice, w.roughness_nm, "
-            + "w.wafer_type, w.wafer_size_in, w.wafer_size_label, w.notes, w.created_at, "
+            + "w.wafer_type, w.wafer_size_in, w.notes, w.created_at, "
             + "cs.status_code, cs.status_label, cs.effective_at AS status_effective_at "
             + "FROM wafers w "
             + "LEFT JOIN wafer_current_status cs ON cs.wafer_id = w.wafer_id "
@@ -153,16 +264,50 @@ public final class WafersServlet extends BaseApiServlet {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("ok", true);
         payload.put("wafer", wafer);
+        payload.put("metadataHistory", queryMetadataHistory(connection, waferId));
         payload.put("statusHistory", queryStatusHistory(connection, waferId));
         payload.put("activities", queryActivities(connection, waferId));
         payload.put("darkfieldRuns", queryDarkfieldRuns(connection, waferId));
         return payload;
     }
 
+    private List<Map<String, Object>> queryMetadataHistory(Connection connection, long waferId) throws SQLException {
+        String sql = ""
+            + "SELECT wafer_metadata_history_id, changed_at, name, acquired_date, reference_invoice, roughness_nm, "
+            + "wafer_type, wafer_size_in, notes, change_summary, created_at, "
+            + "CASE WHEN photo_blob IS NULL THEN 0 ELSE 1 END AS has_photo "
+            + "FROM wafer_metadata_history WHERE wafer_id = ? "
+            + "ORDER BY datetime(changed_at) DESC, wafer_metadata_history_id DESC";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, waferId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<Map<String, Object>> items = new ArrayList<>();
+                while (resultSet.next()) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("waferMetadataHistoryId", resultSet.getLong("wafer_metadata_history_id"));
+                    item.put("changedAt", resultSet.getString("changed_at"));
+                    item.put("name", resultSet.getString("name"));
+                    item.put("acquiredDate", resultSet.getString("acquired_date"));
+                    item.put("referenceInvoice", resultSet.getString("reference_invoice"));
+                    item.put("roughnessNm", resultSet.getObject("roughness_nm"));
+                    item.put("waferType", resultSet.getString("wafer_type"));
+                    item.put("waferSizeIn", resultSet.getObject("wafer_size_in"));
+                    item.put("notes", resultSet.getString("notes"));
+                    item.put("changeSummary", resultSet.getString("change_summary"));
+                    item.put("createdAt", resultSet.getString("created_at"));
+                    item.put("hasPhoto", resultSet.getInt("has_photo") == 1);
+                    items.add(item);
+                }
+                return items;
+            }
+        }
+    }
+
     private List<Map<String, Object>> queryStatusHistory(Connection connection, long waferId) throws SQLException {
         String sql = ""
             + "SELECT h.wafer_status_history_id, s.code AS status_code, s.label AS status_label, "
-            + "h.effective_at, h.cleared_at, h.notes "
+            + "h.effective_at, h.cleared_at, h.notes, "
+            + "CASE WHEN h.photo_blob IS NULL THEN 0 ELSE 1 END AS has_photo "
             + "FROM wafer_status_history h "
             + "JOIN wafer_statuses s ON s.status_id = h.status_id "
             + "WHERE h.wafer_id = ? "
@@ -179,6 +324,7 @@ public final class WafersServlet extends BaseApiServlet {
                     item.put("effectiveAt", resultSet.getString("effective_at"));
                     item.put("clearedAt", resultSet.getString("cleared_at"));
                     item.put("notes", resultSet.getString("notes"));
+                    item.put("hasPhoto", resultSet.getInt("has_photo") == 1);
                     items.add(item);
                 }
                 return items;
@@ -284,9 +430,8 @@ public final class WafersServlet extends BaseApiServlet {
     private Map<String, Object> createWafer(Connection connection, HttpServletRequest request) throws SQLException {
         String sql = ""
             + "INSERT INTO wafers ("
-            + "name, acquired_date, reference_invoice, roughness_nm, wafer_type, "
-            + "wafer_size_in, wafer_size_label, notes"
-            + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            + "name, acquired_date, reference_invoice, roughness_nm, wafer_type, wafer_size_in, notes"
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, RequestUtil.required(request, "name"));
             statement.setString(2, RequestUtil.required(request, "acquiredDate"));
@@ -294,8 +439,7 @@ public final class WafersServlet extends BaseApiServlet {
             bindNullableDouble(statement, 4, RequestUtil.optionalDouble(request, "roughnessNm"));
             statement.setString(5, RequestUtil.required(request, "waferType"));
             bindNullableDouble(statement, 6, RequestUtil.optionalDouble(request, "waferSizeIn"));
-            statement.setString(7, RequestUtil.optional(request, "waferSizeLabel"));
-            statement.setString(8, RequestUtil.optional(request, "notes"));
+            statement.setString(7, RequestUtil.optional(request, "notes"));
             statement.executeUpdate();
 
             long waferId;
@@ -314,7 +458,9 @@ public final class WafersServlet extends BaseApiServlet {
                     initialStatusCode,
                     RequestUtil.optional(request, "initialStatusEffectiveAt"),
                     null,
-                    RequestUtil.optional(request, "initialStatusNotes")
+                    RequestUtil.optional(request, "initialStatusNotes"),
+                    null,
+                    null
                 );
             }
 
@@ -330,7 +476,9 @@ public final class WafersServlet extends BaseApiServlet {
             RequestUtil.required(request, "statusCode"),
             RequestUtil.required(request, "effectiveAt"),
             RequestUtil.optional(request, "clearedAt"),
-            RequestUtil.optional(request, "notes")
+            RequestUtil.optional(request, "notes"),
+            null,
+            null
         );
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -341,23 +489,92 @@ public final class WafersServlet extends BaseApiServlet {
         return payload;
     }
 
+    private Map<String, Object> createMetadataHistory(Connection connection, long waferId, HttpServletRequest request)
+        throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+
+        try {
+            String name = RequestUtil.required(request, "name");
+            String acquiredDate = RequestUtil.required(request, "acquiredDate");
+            String referenceInvoice = RequestUtil.optional(request, "referenceInvoice");
+            Double roughnessNm = RequestUtil.optionalDouble(request, "roughnessNm");
+            String waferType = RequestUtil.required(request, "waferType");
+            Double waferSizeIn = RequestUtil.optionalDouble(request, "waferSizeIn");
+            String notes = RequestUtil.optional(request, "notes");
+
+            updateWaferMetadata(
+                connection,
+                waferId,
+                name,
+                acquiredDate,
+                referenceInvoice,
+                roughnessNm,
+                waferType,
+                waferSizeIn,
+                notes
+            );
+
+            StatusPhoto photo = extractStatusPhoto(request);
+
+            long rowId = insertMetadataHistory(
+                connection,
+                waferId,
+                RequestUtil.required(request, "changedAt"),
+                name,
+                acquiredDate,
+                referenceInvoice,
+                roughnessNm,
+                waferType,
+                waferSizeIn,
+                notes,
+                RequestUtil.optional(request, "changeSummary"),
+                photo.contentType,
+                photo.bytes
+            );
+
+            connection.commit();
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ok", true);
+            payload.put("waferId", waferId);
+            payload.put("waferMetadataHistoryId", rowId);
+            payload.put("detail", queryWaferDetail(connection, waferId));
+            return payload;
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } catch (RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(originalAutoCommit);
+        }
+    }
+
     private long insertStatusHistory(
         Connection connection,
         long waferId,
         String statusCode,
         String effectiveAt,
         String clearedAt,
-        String notes
+        String notes,
+        String photoContentType,
+        byte[] photoBytes
     ) throws SQLException {
         String sql = ""
-            + "INSERT INTO wafer_status_history (wafer_id, status_id, effective_at, cleared_at, notes) "
-            + "SELECT ?, status_id, ?, ?, ? FROM wafer_statuses WHERE code = ?";
+            + "INSERT INTO wafer_status_history ("
+            + "wafer_id, status_id, effective_at, cleared_at, notes, photo_content_type, photo_blob"
+            + ") "
+            + "SELECT ?, status_id, ?, ?, ?, ?, ? FROM wafer_statuses WHERE code = ?";
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, waferId);
             statement.setString(2, effectiveAt);
             statement.setString(3, clearedAt);
             statement.setString(4, notes);
-            statement.setString(5, statusCode);
+            statement.setString(5, photoContentType);
+            statement.setBytes(6, photoBytes);
+            statement.setString(7, statusCode);
             int updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new IllegalArgumentException("Unknown status code: " + statusCode);
@@ -365,6 +582,80 @@ public final class WafersServlet extends BaseApiServlet {
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (!keys.next()) {
                     throw new SQLException("Status row insert did not return a key.");
+                }
+                return keys.getLong(1);
+            }
+        }
+    }
+
+    private void updateWaferMetadata(
+        Connection connection,
+        long waferId,
+        String name,
+        String acquiredDate,
+        String referenceInvoice,
+        Double roughnessNm,
+        String waferType,
+        Double waferSizeIn,
+        String notes
+    ) throws SQLException {
+        String sql = ""
+            + "UPDATE wafers SET "
+            + "name = ?, acquired_date = ?, reference_invoice = ?, roughness_nm = ?, wafer_type = ?, "
+            + "wafer_size_in = ?, notes = ? "
+            + "WHERE wafer_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, name);
+            statement.setString(2, acquiredDate);
+            statement.setString(3, referenceInvoice);
+            bindNullableDouble(statement, 4, roughnessNm);
+            statement.setString(5, waferType);
+            bindNullableDouble(statement, 6, waferSizeIn);
+            statement.setString(7, notes);
+            statement.setLong(8, waferId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("Wafer not found.");
+            }
+        }
+    }
+
+    private long insertMetadataHistory(
+        Connection connection,
+        long waferId,
+        String changedAt,
+        String name,
+        String acquiredDate,
+        String referenceInvoice,
+        Double roughnessNm,
+        String waferType,
+        Double waferSizeIn,
+        String notes,
+        String changeSummary,
+        String photoContentType,
+        byte[] photoBytes
+    ) throws SQLException {
+        String sql = ""
+            + "INSERT INTO wafer_metadata_history ("
+            + "wafer_id, changed_at, name, acquired_date, reference_invoice, roughness_nm, "
+            + "wafer_type, wafer_size_in, notes, change_summary, photo_content_type, photo_blob"
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setLong(1, waferId);
+            statement.setString(2, changedAt);
+            statement.setString(3, name);
+            statement.setString(4, acquiredDate);
+            statement.setString(5, referenceInvoice);
+            bindNullableDouble(statement, 6, roughnessNm);
+            statement.setString(7, waferType);
+            bindNullableDouble(statement, 8, waferSizeIn);
+            statement.setString(9, notes);
+            statement.setString(10, changeSummary);
+            statement.setString(11, photoContentType);
+            statement.setBytes(12, photoBytes);
+            statement.executeUpdate();
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                if (!keys.next()) {
+                    throw new SQLException("Wafer metadata history insert did not return a key.");
                 }
                 return keys.getLong(1);
             }
@@ -515,6 +806,39 @@ public final class WafersServlet extends BaseApiServlet {
         }
     }
 
+    private Map<String, Object> attachStatusPhoto(
+        Connection connection,
+        long waferId,
+        long statusHistoryId,
+        HttpServletRequest request
+    ) throws SQLException {
+        StatusPhoto photo = extractStatusPhoto(request);
+        if (photo.bytes == null || photo.bytes.length == 0) {
+            throw new IllegalArgumentException("No photo data provided.");
+        }
+
+        String sql = ""
+            + "UPDATE wafer_status_history "
+            + "SET photo_content_type = ?, photo_blob = ? "
+            + "WHERE wafer_id = ? AND wafer_status_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, photo.contentType);
+            statement.setBytes(2, photo.bytes);
+            statement.setLong(3, waferId);
+            statement.setLong(4, statusHistoryId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("Status history record not found.");
+            }
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("waferId", waferId);
+        payload.put("waferStatusHistoryId", statusHistoryId);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
+    }
+
     private Map<String, Object> mapWaferRow(ResultSet resultSet) throws SQLException {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("waferId", resultSet.getLong("wafer_id"));
@@ -524,7 +848,6 @@ public final class WafersServlet extends BaseApiServlet {
         row.put("roughnessNm", resultSet.getObject("roughness_nm"));
         row.put("waferType", resultSet.getString("wafer_type"));
         row.put("waferSizeIn", resultSet.getObject("wafer_size_in"));
-        row.put("waferSizeLabel", resultSet.getString("wafer_size_label"));
         row.put("notes", resultSet.getString("notes"));
         row.put("createdAt", resultSet.getString("created_at"));
         row.put("statusCode", resultSet.getString("status_code"));
@@ -544,6 +867,146 @@ public final class WafersServlet extends BaseApiServlet {
             statement.setObject(index, null);
         } else {
             statement.setDouble(index, value);
+        }
+    }
+
+    private StatusPhoto extractStatusPhoto(HttpServletRequest request) {
+        String photoBase64 = RequestUtil.optional(request, "photoBase64");
+        if (photoBase64 == null) {
+            return StatusPhoto.empty();
+        }
+
+        String contentType = RequestUtil.optional(request, "photoContentType");
+        if (contentType == null) {
+            contentType = "image/jpeg";
+        }
+        if (!contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("Invalid photo content type: " + contentType);
+        }
+
+        byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(photoBase64);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Invalid base64 photo payload.");
+        }
+        if (bytes.length == 0) {
+            return StatusPhoto.empty();
+        }
+        if (bytes.length > 8 * 1024 * 1024) {
+            throw new IllegalArgumentException("Photo is too large. Limit is 8 MB.");
+        }
+        return new StatusPhoto(contentType, bytes);
+    }
+
+    private void sendStatusPhoto(
+        HttpServletResponse response,
+        Connection connection,
+        long waferId,
+        long statusHistoryId
+    ) throws SQLException, IOException {
+        String sql = ""
+            + "SELECT photo_content_type, photo_blob "
+            + "FROM wafer_status_history "
+            + "WHERE wafer_id = ? AND wafer_status_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, waferId);
+            statement.setLong(2, statusHistoryId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    sendError(response, HttpServletResponse.SC_NOT_FOUND, "Status photo not found.");
+                    return;
+                }
+
+                byte[] bytes = resultSet.getBytes("photo_blob");
+                if (bytes == null || bytes.length == 0) {
+                    sendError(response, HttpServletResponse.SC_NOT_FOUND, "Status photo not found.");
+                    return;
+                }
+
+                String contentType = resultSet.getString("photo_content_type");
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.setContentType(contentType == null ? "image/jpeg" : contentType);
+                response.getOutputStream().write(bytes);
+            }
+        }
+    }
+
+    private Map<String, Object> attachHistoryPhoto(
+        Connection connection,
+        long waferId,
+        long historyId,
+        HttpServletRequest request
+    ) throws SQLException {
+        StatusPhoto photo = extractStatusPhoto(request);
+        if (photo.bytes == null || photo.bytes.length == 0) {
+            throw new IllegalArgumentException("No photo data provided.");
+        }
+        String sql = ""
+            + "UPDATE wafer_metadata_history "
+            + "SET photo_content_type = ?, photo_blob = ? "
+            + "WHERE wafer_id = ? AND wafer_metadata_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, photo.contentType);
+            statement.setBytes(2, photo.bytes);
+            statement.setLong(3, waferId);
+            statement.setLong(4, historyId);
+            if (statement.executeUpdate() == 0) {
+                throw new IllegalArgumentException("History record not found.");
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", true);
+        payload.put("waferId", waferId);
+        payload.put("waferMetadataHistoryId", historyId);
+        payload.put("detail", queryWaferDetail(connection, waferId));
+        return payload;
+    }
+
+    private void sendHistoryPhoto(
+        HttpServletResponse response,
+        Connection connection,
+        long waferId,
+        long historyId
+    ) throws SQLException, IOException {
+        String sql = ""
+            + "SELECT photo_content_type, photo_blob "
+            + "FROM wafer_metadata_history "
+            + "WHERE wafer_id = ? AND wafer_metadata_history_id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, waferId);
+            statement.setLong(2, historyId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    sendError(response, HttpServletResponse.SC_NOT_FOUND, "History photo not found.");
+                    return;
+                }
+                byte[] bytes = resultSet.getBytes("photo_blob");
+                if (bytes == null || bytes.length == 0) {
+                    sendError(response, HttpServletResponse.SC_NOT_FOUND, "History photo not found.");
+                    return;
+                }
+                String contentType = resultSet.getString("photo_content_type");
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.setContentType(contentType == null ? "image/jpeg" : contentType);
+                response.getOutputStream().write(bytes);
+            }
+        }
+    }
+
+    private static final class StatusPhoto {
+        private static final StatusPhoto EMPTY = new StatusPhoto(null, null);
+
+        private final String contentType;
+        private final byte[] bytes;
+
+        private StatusPhoto(String contentType, byte[] bytes) {
+            this.contentType = contentType;
+            this.bytes = bytes;
+        }
+
+        private static StatusPhoto empty() {
+            return EMPTY;
         }
     }
 }
