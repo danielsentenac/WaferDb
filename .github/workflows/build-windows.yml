@@ -52,5 +52,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: waferdb-windows-setup
-          path: dist/waferdb-setup-*.exe
+          path: waferdb_app/windows/waferdb-setup-*.exe
           if-no-files-found: error

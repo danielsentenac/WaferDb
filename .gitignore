@@ -13,3 +13,4 @@ waferdb_app/linux/flutter/ephemeral/
 waferdb_app/android/key.properties
 waferdb_app/android/*.jks
 waferdb_app/android/*.keystore
+waferdb_app/windows/*.exe
