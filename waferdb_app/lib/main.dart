@@ -979,13 +979,6 @@ class _WaferHomePageState extends State<WaferHomePage> {
                 ),
               ],
             ),
-      if ((detail.wafer.notes ?? '').isNotEmpty) ...[
-        const SizedBox(height: 16),
-        _SectionPanel(
-          title: 'Notes',
-          child: LinkifiedText(detail.wafer.notes!),
-        ),
-      ],
       const SizedBox(height: 18),
       _SectionPanel(
         title: 'Wafer data history',
