@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'app_config.dart';
 
+bool get _sshSupported =>
+    Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+
 class DarkfieldImportedBin {
   const DarkfieldImportedBin({
     required this.label,
@@ -57,6 +60,11 @@ Future<DarkfieldImportedSummary> importDarkfieldSummary(
   String requestedPath, {
   String host = defaultDarkfieldImportHost,
 }) async {
+  if (!_sshSupported) {
+    throw const FormatException(
+      'Darkfield import via SSH is only supported on desktop (Linux, Windows, macOS).',
+    );
+  }
   final trimmedPath = requestedPath.trim();
   if (trimmedPath.isEmpty) {
     throw const FormatException('Data path is required.');
