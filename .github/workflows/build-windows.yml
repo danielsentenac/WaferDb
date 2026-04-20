@@ -1,0 +1,56 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: 'WAFERDB_API_BASE URL (leave blank for default)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Windows platform scaffold
+        working-directory: waferdb_app
+        run: flutter create --platforms=windows .
+
+      - name: Install dependencies
+        working-directory: waferdb_app
+        run: flutter pub get
+
+      - name: Build Windows release
+        working-directory: waferdb_app
+        run: |
+          $dartDefines = @(
+            "--dart-define=WAFERDB_API_BASE=${{ inputs.api_base != '' && inputs.api_base || vars.WAFERDB_API_BASE != '' && vars.WAFERDB_API_BASE || 'http://127.0.0.1:8081/WaferDb/api' }}"
+          )
+          flutter build windows --release @dartDefines
+
+      - name: Get app version
+        id: version
+        working-directory: waferdb_app
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s+(\S+)\+').Matches[0].Groups[1].Value
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\waferdb_setup.iss `
+            /DAppVersion=${{ steps.version.outputs.version }}
+        shell: pwsh
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: waferdb-windows-setup
+          path: dist/waferdb-setup-*.exe
+          if-no-files-found: error
