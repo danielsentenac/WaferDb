@@ -9,7 +9,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Objects;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -706,7 +705,7 @@ public final class WafersServlet extends BaseApiServlet {
                     connection,
                     waferId,
                     initialStatusCode,
-                    Objects.requireNonNullElse(RequestUtil.optional(request, "initialStatusEffectiveAt"), java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))),
+                    RequestUtil.optional(request, "initialStatusEffectiveAt") != null ? RequestUtil.optional(request, "initialStatusEffectiveAt") : java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
                     null,
                     RequestUtil.optional(request, "initialStatusNotes"),
                     null,
