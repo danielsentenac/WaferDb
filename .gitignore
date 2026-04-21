@@ -6,11 +6,5 @@ __pycache__/
 config/site.env.local
 backend/target/
 dist/
-waferdb_app/.dart_tool/
-waferdb_app/.packages
-waferdb_app/build/
-waferdb_app/linux/flutter/ephemeral/
-waferdb_app/android/key.properties
-waferdb_app/android/*.jks
-waferdb_app/android/*.keystore
-waferdb_app/windows/*.exe
+waferdb_app/
+data/
