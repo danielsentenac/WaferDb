@@ -6,5 +6,4 @@ __pycache__/
 config/site.env.local
 backend/target/
 dist/
-waferdb_app/
 data/
