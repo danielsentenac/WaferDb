@@ -250,7 +250,7 @@ class _CreateWaferDialogState extends State<_CreateWaferDialog> {
     _invoiceController = TextEditingController();
     _roughnessController = TextEditingController();
     _typeController = TextEditingController(text: 'silicon');
-    _sizeInController = TextEditingController(text: '4');
+    _sizeInController = TextEditingController(text: '3');
     _notesController = TextEditingController();
     _initialStatusCode = widget.lookups.statuses.isNotEmpty
         ? widget.lookups.statuses.first.code

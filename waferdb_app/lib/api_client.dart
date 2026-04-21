@@ -268,6 +268,10 @@ class ApiClient {
     return WaferDetail.fromJson(payload['detail'] as Map<String, dynamic>);
   }
 
+  Future<void> deleteWafer(int waferId) async {
+    await _request('DELETE', 'wafers/$waferId');
+  }
+
   Future<Map<String, dynamic>> importDarkfieldSummary(String path) async {
     return await _request(
       'GET',

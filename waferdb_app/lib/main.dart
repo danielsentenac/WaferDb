@@ -484,6 +484,26 @@ class _WaferHomePageState extends State<WaferHomePage> {
     );
   }
 
+  Future<void> _deleteWafer() async {
+    final detail = _selectedDetail;
+    if (detail == null) return;
+    if (!await _confirmDelete('wafer ${detail.wafer.name} and all its data')) return;
+    setState(() => _busy = true);
+    try {
+      await _apiClient.deleteWafer(detail.wafer.waferId);
+      if (!mounted) return;
+      setState(() {
+        _selectedDetail = null;
+        _selectedWaferId = null;
+      });
+      await _refreshData(reloadDetail: true);
+      _showSnack('Wafer ${detail.wafer.name} deleted.');
+    } on ApiException catch (error) {
+      _showSnack(error.message, isError: true);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _runEdit(
     Future<WaferDetail> Function() action,
     String successMessage,
@@ -1150,6 +1170,17 @@ class _WaferHomePageState extends State<WaferHomePage> {
                   label: const Text('Add darkfield'),
                 ),
               ),
+              SizedBox(
+                width: actionButtonWidth,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF852020),
+                  ),
+                  onPressed: _deleteWafer,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete wafer'),
+                ),
+              ),
             ],
           )
         : Column(
@@ -1188,6 +1219,18 @@ class _WaferHomePageState extends State<WaferHomePage> {
                   onPressed: _appendDarkfieldRun,
                   icon: const Icon(Icons.biotech_outlined),
                   label: const Text('Add darkfield'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: actionButtonWidth,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF852020),
+                  ),
+                  onPressed: _deleteWafer,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete wafer'),
                 ),
               ),
             ],
@@ -1383,6 +1426,7 @@ double _uniformActionButtonWidth(BuildContext context) {
     'Add status',
     'Add activity',
     'Add darkfield',
+    'Delete wafer',
   ];
 
   final baseStyle =

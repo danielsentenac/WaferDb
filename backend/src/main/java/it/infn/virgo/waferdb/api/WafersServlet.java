@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -127,6 +128,22 @@ public final class WafersServlet extends BaseApiServlet {
     protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws IOException {
         try (Connection connection = openConnection()) {
             List<String> segments = RequestUtil.pathSegments(request);
+
+            if (segments.size() == 1) {
+                long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "DELETE FROM wafers WHERE wafer_id = ?")) {
+                    statement.setLong(1, waferId);
+                    if (statement.executeUpdate() == 0) {
+                        throw new IllegalArgumentException("Wafer not found.");
+                    }
+                }
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("ok", true);
+                payload.put("waferId", waferId);
+                sendOk(response, payload);
+                return;
+            }
 
             if (segments.size() == 3 && "history".equals(segments.get(1))) {
                 long waferId = RequestUtil.requiredLongPathSegment(segments.get(0), "wafer id");
@@ -689,7 +706,7 @@ public final class WafersServlet extends BaseApiServlet {
                     connection,
                     waferId,
                     initialStatusCode,
-                    RequestUtil.optional(request, "initialStatusEffectiveAt"),
+                    Objects.requireNonNullElse(RequestUtil.optional(request, "initialStatusEffectiveAt"), java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))),
                     null,
                     RequestUtil.optional(request, "initialStatusNotes"),
                     null,
