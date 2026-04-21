@@ -60,7 +60,9 @@ INSERT OR IGNORE INTO wafer_statuses (status_id, code, label, description) VALUE
     (2, 'darkfield_background_todo', 'Darkfield background to be done', 'Baseline darkfield background has not been recorded yet.'),
     (3, 'darkfield_background_done', 'Darkfield background done', 'Baseline darkfield background is available.'),
     (4, 'darkfield_exposed_done', 'Darkfield inspection done', 'Darkfield inspection has been completed.'),
-    (5, 'darkfield_inspection_todo', 'Darkfield inspection to be done', 'Darkfield inspection has not been recorded yet.');
+    (5, 'darkfield_inspection_todo', 'Darkfield inspection to be done', 'Darkfield inspection has not been recorded yet.'),
+    (6, 'in_operation', 'In operation', 'Wafer is currently installed and in active use.'),
+    (7, 'end_operation', 'End of operation', 'Wafer has been removed from operation.');
 
 CREATE TABLE IF NOT EXISTS location_types (
     location_type_id INTEGER PRIMARY KEY,
@@ -122,6 +124,7 @@ CREATE TABLE IF NOT EXISTS wafer_status_history (
     notes TEXT,
     photo_content_type TEXT CHECK (photo_content_type IS NULL OR photo_content_type LIKE 'image/%'),
     photo_blob BLOB,
+    source_activity_id INTEGER REFERENCES wafer_activities(activity_id) ON DELETE CASCADE,
     CHECK (cleared_at IS NULL OR datetime(cleared_at) >= datetime(effective_at))
 );
 
@@ -134,17 +137,18 @@ CREATE TABLE IF NOT EXISTS wafer_activities (
     purpose_id INTEGER NOT NULL REFERENCES usage_purposes(purpose_id),
     observed_status_id INTEGER REFERENCES wafer_statuses(status_id),
     location_id INTEGER NOT NULL REFERENCES locations(location_id),
-    exposure_quantity REAL NOT NULL CHECK (exposure_quantity >= 0),
-    exposure_unit TEXT NOT NULL CHECK (exposure_unit IN ('hours', 'days', 'months', 'years')),
+    exposure_quantity REAL CHECK (exposure_quantity IS NULL OR exposure_quantity >= 0),
+    exposure_unit TEXT CHECK (exposure_unit IS NULL OR exposure_unit IN ('hours', 'days', 'months', 'years')),
     started_at TEXT CHECK (started_at IS NULL OR datetime(started_at) IS NOT NULL),
     ended_at TEXT CHECK (ended_at IS NULL OR datetime(ended_at) IS NOT NULL),
     observations TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (exposure_quantity IS NULL OR exposure_unit IS NOT NULL),
+    CHECK (exposure_unit IS NULL OR exposure_quantity IS NOT NULL),
     CHECK (
-        (started_at IS NULL AND ended_at IS NULL)
+        ended_at IS NULL
         OR (
             started_at IS NOT NULL
-            AND ended_at IS NOT NULL
             AND datetime(ended_at) >= datetime(started_at)
         )
     )

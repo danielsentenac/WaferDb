@@ -276,37 +276,66 @@ public final class WafersServlet extends BaseApiServlet {
     private Map<String, Object> updateActivity(
         Connection connection, long waferId, long activityId, HttpServletRequest request
     ) throws SQLException {
-        String sql = ""
-            + "UPDATE wafer_activities SET "
-            + "purpose_id = (SELECT purpose_id FROM usage_purposes WHERE code = ?), "
-            + "location_id = (SELECT location_id FROM locations WHERE code = ?), "
-            + "observed_status_id = (SELECT status_id FROM wafer_statuses WHERE code = ?), "
-            + "exposure_quantity = ?, exposure_unit = ?, "
-            + "started_at = ?, ended_at = ?, observations = ? "
-            + "WHERE wafer_id = ? AND activity_id = ?";
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, RequestUtil.required(request, "purposeCode"));
-            statement.setString(2, RequestUtil.required(request, "locationCode"));
-            statement.setString(3, RequestUtil.optional(request, "observedStatusCode"));
-            Double exposureQuantity = RequestUtil.optionalDouble(request, "exposureQuantity");
-            if (exposureQuantity == null) {
-                throw new IllegalArgumentException("Missing required parameter: exposureQuantity");
+        boolean originalAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            String observedStatusCode = RequestUtil.optional(request, "observedStatusCode");
+            String startedAt = RequestUtil.optional(request, "startedAt");
+            String endedAt = RequestUtil.optional(request, "endedAt");
+
+            String sql = ""
+                + "UPDATE wafer_activities SET "
+                + "purpose_id = (SELECT purpose_id FROM usage_purposes WHERE code = ?), "
+                + "location_id = (SELECT location_id FROM locations WHERE code = ?), "
+                + "observed_status_id = (SELECT status_id FROM wafer_statuses WHERE code = ?), "
+                + "exposure_quantity = ?, exposure_unit = ?, "
+                + "started_at = ?, ended_at = ?, observations = ? "
+                + "WHERE wafer_id = ? AND activity_id = ?";
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, RequestUtil.required(request, "purposeCode"));
+                statement.setString(2, RequestUtil.required(request, "locationCode"));
+                statement.setString(3, observedStatusCode);
+                Double exposureQuantity = RequestUtil.optionalDouble(request, "exposureQuantity");
+                if (exposureQuantity != null) {
+                    statement.setDouble(4, exposureQuantity);
+                } else {
+                    statement.setNull(4, java.sql.Types.REAL);
+                }
+                statement.setString(5, RequestUtil.optional(request, "exposureUnit"));
+                statement.setString(6, startedAt);
+                statement.setString(7, RequestUtil.optional(request, "endedAt"));
+                statement.setString(8, RequestUtil.optional(request, "observations"));
+                statement.setLong(9, waferId);
+                statement.setLong(10, activityId);
+                if (statement.executeUpdate() == 0) throw new IllegalArgumentException("Activity not found.");
             }
-            statement.setDouble(4, exposureQuantity);
-            statement.setString(5, RequestUtil.required(request, "exposureUnit"));
-            statement.setString(6, RequestUtil.optional(request, "startedAt"));
-            statement.setString(7, RequestUtil.optional(request, "endedAt"));
-            statement.setString(8, RequestUtil.optional(request, "observations"));
-            statement.setLong(9, waferId);
-            statement.setLong(10, activityId);
-            if (statement.executeUpdate() == 0) {
-                throw new IllegalArgumentException("Activity not found.");
+
+            // Sync linked status entry: delete old, insert new if status is set.
+            try (PreparedStatement del = connection.prepareStatement(
+                    "DELETE FROM wafer_status_history WHERE source_activity_id = ?")) {
+                del.setLong(1, activityId);
+                del.executeUpdate();
             }
+            if (observedStatusCode != null && !observedStatusCode.isEmpty()) {
+                String effectiveAt = (endedAt != null && !endedAt.isEmpty())
+                    ? endedAt
+                    : (startedAt != null && !startedAt.isEmpty())
+                        ? startedAt
+                        : new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new java.util.Date());
+                insertStatusHistory(connection, waferId, observedStatusCode, effectiveAt, null, null, null, null, activityId);
+            }
+
+            connection.commit();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ok", true);
+            payload.put("detail", queryWaferDetail(connection, waferId));
+            return payload;
+        } catch (Exception e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(originalAutoCommit);
         }
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("ok", true);
-        payload.put("detail", queryWaferDetail(connection, waferId));
-        return payload;
     }
 
     private Map<String, Object> updateDarkfieldRun(
@@ -507,7 +536,7 @@ public final class WafersServlet extends BaseApiServlet {
     private List<Map<String, Object>> queryStatusHistory(Connection connection, long waferId) throws SQLException {
         String sql = ""
             + "SELECT h.wafer_status_history_id, s.code AS status_code, s.label AS status_label, "
-            + "h.effective_at, h.cleared_at, h.notes, "
+            + "h.effective_at, h.cleared_at, h.notes, h.source_activity_id, "
             + "CASE WHEN h.photo_blob IS NULL THEN 0 ELSE 1 END AS has_photo "
             + "FROM wafer_status_history h "
             + "JOIN wafer_statuses s ON s.status_id = h.status_id "
@@ -526,6 +555,8 @@ public final class WafersServlet extends BaseApiServlet {
                     item.put("clearedAt", resultSet.getString("cleared_at"));
                     item.put("notes", resultSet.getString("notes"));
                     item.put("hasPhoto", resultSet.getInt("has_photo") == 1);
+                    long sourceActivityId = resultSet.getLong("source_activity_id");
+                    item.put("sourceActivityId", resultSet.wasNull() ? null : sourceActivityId);
                     items.add(item);
                 }
                 return items;
@@ -559,7 +590,8 @@ public final class WafersServlet extends BaseApiServlet {
                     item.put("statusLabel", resultSet.getString("status_label"));
                     item.put("locationCode", resultSet.getString("location_code"));
                     item.put("locationName", resultSet.getString("location_name"));
-                    item.put("exposureQuantity", resultSet.getDouble("exposure_quantity"));
+                    double exposureQuantity = resultSet.getDouble("exposure_quantity");
+                    item.put("exposureQuantity", resultSet.wasNull() ? null : exposureQuantity);
                     item.put("exposureUnit", resultSet.getString("exposure_unit"));
                     item.put("startedAt", resultSet.getString("started_at"));
                     item.put("endedAt", resultSet.getString("ended_at"));
@@ -763,11 +795,25 @@ public final class WafersServlet extends BaseApiServlet {
         String photoContentType,
         byte[] photoBytes
     ) throws SQLException {
+        return insertStatusHistory(connection, waferId, statusCode, effectiveAt, clearedAt, notes, photoContentType, photoBytes, null);
+    }
+
+    private long insertStatusHistory(
+        Connection connection,
+        long waferId,
+        String statusCode,
+        String effectiveAt,
+        String clearedAt,
+        String notes,
+        String photoContentType,
+        byte[] photoBytes,
+        Long sourceActivityId
+    ) throws SQLException {
         String sql = ""
             + "INSERT INTO wafer_status_history ("
-            + "wafer_id, status_id, effective_at, cleared_at, notes, photo_content_type, photo_blob"
+            + "wafer_id, status_id, effective_at, cleared_at, notes, photo_content_type, photo_blob, source_activity_id"
             + ") "
-            + "SELECT ?, status_id, ?, ?, ?, ?, ? FROM wafer_statuses WHERE code = ?";
+            + "SELECT ?, status_id, ?, ?, ?, ?, ?, ? FROM wafer_statuses WHERE code = ?";
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, waferId);
             statement.setString(2, effectiveAt);
@@ -775,7 +821,12 @@ public final class WafersServlet extends BaseApiServlet {
             statement.setString(4, notes);
             statement.setString(5, photoContentType);
             statement.setBytes(6, photoBytes);
-            statement.setString(7, statusCode);
+            if (sourceActivityId != null) {
+                statement.setLong(7, sourceActivityId);
+            } else {
+                statement.setNull(7, java.sql.Types.INTEGER);
+            }
+            statement.setString(8, statusCode);
             int updated = statement.executeUpdate();
             if (updated == 0) {
                 throw new IllegalArgumentException("Unknown status code: " + statusCode);
@@ -865,48 +916,69 @@ public final class WafersServlet extends BaseApiServlet {
 
     private Map<String, Object> createActivity(Connection connection, long waferId, HttpServletRequest request)
         throws SQLException {
-        String sql = ""
-            + "INSERT INTO wafer_activities ("
-            + "wafer_id, purpose_id, observed_status_id, location_id, exposure_quantity, "
-            + "exposure_unit, started_at, ended_at, observations"
-            + ") VALUES ("
-            + "?, "
-            + "(SELECT purpose_id FROM usage_purposes WHERE code = ?), "
-            + "(SELECT status_id FROM wafer_statuses WHERE code = ?), "
-            + "(SELECT location_id FROM locations WHERE code = ?), "
-            + "?, ?, ?, ?, ?"
-            + ")";
+        boolean originalAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            String sql = ""
+                + "INSERT INTO wafer_activities ("
+                + "wafer_id, purpose_id, observed_status_id, location_id, exposure_quantity, "
+                + "exposure_unit, started_at, ended_at, observations"
+                + ") VALUES ("
+                + "?, "
+                + "(SELECT purpose_id FROM usage_purposes WHERE code = ?), "
+                + "(SELECT status_id FROM wafer_statuses WHERE code = ?), "
+                + "(SELECT location_id FROM locations WHERE code = ?), "
+                + "?, ?, ?, ?, ?"
+                + ")";
 
-        try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            statement.setLong(1, waferId);
-            statement.setString(2, RequestUtil.required(request, "purposeCode"));
-            statement.setString(3, RequestUtil.optional(request, "observedStatusCode"));
-            statement.setString(4, RequestUtil.required(request, "locationCode"));
-            Double exposureQuantity = RequestUtil.optionalDouble(request, "exposureQuantity");
-            if (exposureQuantity == null) {
-                throw new IllegalArgumentException("Missing required parameter: exposureQuantity");
-            }
-            statement.setDouble(5, exposureQuantity);
-            statement.setString(6, RequestUtil.required(request, "exposureUnit"));
-            statement.setString(7, RequestUtil.optional(request, "startedAt"));
-            statement.setString(8, RequestUtil.optional(request, "endedAt"));
-            statement.setString(9, RequestUtil.optional(request, "observations"));
+            String observedStatusCode = RequestUtil.optional(request, "observedStatusCode");
+            String startedAt = RequestUtil.optional(request, "startedAt");
+            String endedAt = RequestUtil.optional(request, "endedAt");
 
-            statement.executeUpdate();
             long activityId;
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                if (!keys.next()) {
-                    throw new SQLException("Activity row insert did not return a key.");
+            try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                statement.setLong(1, waferId);
+                statement.setString(2, RequestUtil.required(request, "purposeCode"));
+                statement.setString(3, observedStatusCode);
+                statement.setString(4, RequestUtil.required(request, "locationCode"));
+                Double exposureQuantity = RequestUtil.optionalDouble(request, "exposureQuantity");
+                if (exposureQuantity != null) {
+                    statement.setDouble(5, exposureQuantity);
+                } else {
+                    statement.setNull(5, java.sql.Types.REAL);
                 }
-                activityId = keys.getLong(1);
+                statement.setString(6, RequestUtil.optional(request, "exposureUnit"));
+                statement.setString(7, startedAt);
+                statement.setString(8, RequestUtil.optional(request, "endedAt"));
+                statement.setString(9, RequestUtil.optional(request, "observations"));
+                statement.executeUpdate();
+                try (ResultSet keys = statement.getGeneratedKeys()) {
+                    if (!keys.next()) throw new SQLException("Activity row insert did not return a key.");
+                    activityId = keys.getLong(1);
+                }
             }
 
+            if (observedStatusCode != null && !observedStatusCode.isEmpty()) {
+                String effectiveAt = (endedAt != null && !endedAt.isEmpty())
+                    ? endedAt
+                    : (startedAt != null && !startedAt.isEmpty())
+                        ? startedAt
+                        : new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(new java.util.Date());
+                insertStatusHistory(connection, waferId, observedStatusCode, effectiveAt, null, null, null, null, activityId);
+            }
+
+            connection.commit();
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("ok", true);
             payload.put("waferId", waferId);
             payload.put("activityId", activityId);
             payload.put("detail", queryWaferDetail(connection, waferId));
             return payload;
+        } catch (Exception e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(originalAutoCommit);
         }
     }
 

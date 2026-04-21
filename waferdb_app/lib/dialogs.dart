@@ -772,7 +772,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
     final qty = entry?.exposureQuantity;
     _exposureQuantityController = TextEditingController(
       text: qty == null
-          ? '1'
+          ? ''
           : (qty == qty.truncateToDouble()
               ? qty.toStringAsFixed(0)
               : qty.toString()),
@@ -781,7 +781,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
       text: entry?.startedAt ?? _nowTimestamp(),
     );
     _endedAtController = TextEditingController(
-      text: entry?.endedAt ?? _nowTimestamp(),
+      text: entry?.endedAt ?? '',
     );
     _observationsController = TextEditingController(
       text: entry?.observations ?? '',
@@ -790,7 +790,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
       _purposeCode = entry.purposeCode;
       _locationCode = entry.locationCode;
       _observedStatusCode = entry.statusCode;
-      _exposureUnit = entry.exposureUnit;
+      _exposureUnit = entry.exposureUnit ?? 'hours';
     } else {
       _purposeCode = widget.lookups.purposes.isNotEmpty
           ? widget.lookups.purposes.first.code
@@ -882,7 +882,7 @@ class _ActivityDialogState extends State<_ActivityDialog> {
                       child: _DialogTextField(
                         controller: _exposureQuantityController,
                         label: 'Exposure quantity',
-                        validator: _requiredField,
+                        hint: 'optional',
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -949,12 +949,21 @@ class _ActivityDialogState extends State<_ActivityDialog> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    final exposureQty = _exposureQuantityController.text.trim();
+    if (exposureQty.isNotEmpty && double.tryParse(exposureQty) == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Exposure quantity must be a number.')),
+      );
+      return;
+    }
     final values = <String, String>{
       'purposeCode': _purposeCode ?? '',
       'locationCode': _locationCode ?? '',
-      'exposureQuantity': _exposureQuantityController.text.trim(),
-      'exposureUnit': _exposureUnit,
     };
+    if (exposureQty.isNotEmpty) {
+      values['exposureQuantity'] = exposureQty;
+      values['exposureUnit'] = _exposureUnit;
+    }
     if ((_observedStatusCode ?? '').isNotEmpty) {
       values['observedStatusCode'] = _observedStatusCode!;
     }
@@ -1204,11 +1213,11 @@ class _DarkfieldRunDialogState extends State<_DarkfieldRunDialog> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    ...widget.detail.activities.map(
-                      (activity) => DropdownMenuItem<int?>(
-                        value: activity.activityId,
+                    ...widget.detail.activities.indexed.map(
+                      ((int, ActivityEntry) e) => DropdownMenuItem<int?>(
+                        value: e.$2.activityId,
                         child: Text(
-                          _activityLabel(activity),
+                          _activityLabel(e.$2, e.$1 + 1),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -1667,13 +1676,13 @@ void _putIfNotNullDouble(
   }
 }
 
-String _activityLabel(ActivityEntry activity) {
+String _activityLabel(ActivityEntry activity, int waferIndex) {
   final timestamp =
       activity.endedAt ?? activity.startedAt ?? activity.createdAt;
   if (timestamp == null || timestamp.isEmpty) {
-    return '#${activity.activityId} ${activity.purposeLabel} • ${activity.locationCode}';
+    return '#$waferIndex ${activity.purposeLabel} • ${activity.locationCode}';
   }
-  return '#${activity.activityId} ${activity.purposeLabel} • ${activity.locationCode} • $timestamp';
+  return '#$waferIndex ${activity.purposeLabel} • ${activity.locationCode} • $timestamp';
 }
 
 String _todayDate() {
