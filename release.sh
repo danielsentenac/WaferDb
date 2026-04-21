@@ -19,7 +19,7 @@ NEW_VERSION="${VERSION}+${NEW_BUILD}"
 echo "Bumping version: $CURRENT → $NEW_VERSION"
 sed -i "s/^version: .*/version: $NEW_VERSION/" "$PUBSPEC"
 
-git add "$PUBSPEC"
+git add -f "$PUBSPEC"
 
 # Also stage the Linux workflow if it's new/modified
 if git status --short .github/workflows/build-linux.yml | grep -q .; then
