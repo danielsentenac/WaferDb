@@ -62,7 +62,8 @@ INSERT OR IGNORE INTO wafer_statuses (status_id, code, label, description) VALUE
     (4, 'darkfield_exposed_done', 'Darkfield inspection done', 'Darkfield inspection has been completed.'),
     (5, 'darkfield_inspection_todo', 'Darkfield inspection to be done', 'Darkfield inspection has not been recorded yet.'),
     (6, 'in_operation', 'In operation', 'Wafer is currently installed and in active use.'),
-    (7, 'end_operation', 'End of operation', 'Wafer has been removed from operation.');
+    (7, 'end_operation', 'End of operation', 'Wafer has been removed from operation.'),
+    (8, 'can_be_reused', 'Can be reused', 'Wafer has been inspected and is suitable for reuse.');
 
 CREATE TABLE IF NOT EXISTS location_types (
     location_type_id INTEGER PRIMARY KEY,
